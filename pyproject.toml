@@ -1,0 +1,56 @@
+[project]
+name = "agentnet-cli"
+version = "0.1.0"
+description = "Detect AI agents and connect them to the Agent-net marketplace"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+keywords = ["ai", "agents", "marketplace", "mcp", "a2a"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.0",
+    "httpx>=0.27",
+    "tomli-w>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://agentnet.market"
+Repository = "https://github.com/TejasKumar3005/Agent-net"
+Issues = "https://github.com/TejasKumar3005/Agent-net/issues"
+
+[project.scripts]
+agentnet = "agentnet_cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentnet_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.12",
+]
