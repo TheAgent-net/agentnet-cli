@@ -88,6 +88,16 @@ uv run agentnet --help           # Run locally
 - **CI (`ci.yml`):** Lint (ruff) + tests across Python 3.11/3.12/3.13 on PRs and pushes to main
 - **Publish (`publish.yml`):** Tags matching `v*` trigger PyPI publish via trusted publisher (OIDC)
 
+## Documentation Requirements
+
+After any change that affects the project's public interface, structure, or developer workflow, update the relevant docs before committing:
+
+- **README.md** — Update if commands, flags, supported agents, install steps, or architecture change
+- **CLAUDE.md** — Update if repo structure, key patterns, test counts, or commands change
+- **Inline docstrings** — Update if a function's contract (params, return, side effects) changes
+
+Do not leave docs describing old behavior. If you add a command, it goes in the README. If you add a test file, update the test count here. If you change a pattern, update the Key Patterns section.
+
 ## Related Repos
 
 - [agentnet-platform](https://github.com/TheAgent-net/agentnet-platform) — FastAPI backend
