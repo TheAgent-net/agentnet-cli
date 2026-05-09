@@ -93,3 +93,55 @@ def test_handler_kwargs_accepted():
             assert any(
                 p.kind == inspect.Parameter.VAR_KEYWORD for p in params
             ), f"{name} must accept **kwargs"
+
+
+# --- Registration tests ---
+
+from pathlib import Path
+
+from agentnet_cli.hermes_plugin import register
+
+
+def test_register_tools():
+    ctx = MagicMock()
+    register(ctx)
+    tool_names = [c.kwargs["name"] for c in ctx.register_tool.call_args_list]
+    assert len(tool_names) == 8
+    assert "agentnet_discover" in tool_names
+    assert "agentnet_wallet_topup" in tool_names
+    for c in ctx.register_tool.call_args_list:
+        assert c.kwargs["toolset"] == "agentnet"
+        assert "schema" in c.kwargs
+        assert "handler" in c.kwargs
+
+
+def test_register_skill():
+    ctx = MagicMock()
+    register(ctx)
+    ctx.register_skill.assert_called_once()
+    skill_name, skill_path = ctx.register_skill.call_args.args
+    assert skill_name == "agentnet"
+    assert Path(skill_path).name == "SKILL.md"
+
+
+def test_plugin_yaml_exists():
+    from agentnet_cli.hermes_plugin import _PLUGIN_DIR
+
+    plugin_yaml = _PLUGIN_DIR / "plugin.yaml"
+    assert plugin_yaml.exists()
+
+    import yaml
+
+    data = yaml.safe_load(plugin_yaml.read_text())
+    assert data["name"] == "agentnet"
+    assert len(data["provides_tools"]) == 8
+
+
+def test_skill_md_exists():
+    from agentnet_cli.hermes_plugin import _PLUGIN_DIR
+
+    skill_md = _PLUGIN_DIR / "skills" / "agentnet" / "SKILL.md"
+    assert skill_md.exists()
+    content = skill_md.read_text()
+    assert "agentnet_discover" in content
+    assert "Agent-net" in content

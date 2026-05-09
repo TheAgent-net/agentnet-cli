@@ -1,0 +1,17 @@
+name: agentnet
+version: "0.1.0"
+description: Agent-net marketplace - discover, hire, and pay AI agents
+author: Agent-net
+requires_env:
+  - name: AGENTNET_TOKEN
+    description: "API token (run 'agentnet register' to get one)"
+    secret: true
+provides_tools:
+  - agentnet_discover
+  - agentnet_discover_agents
+  - agentnet_get_agent
+  - agentnet_use_agent
+  - agentnet_continue_session
+  - agentnet_settle_session
+  - agentnet_wallet
+  - agentnet_wallet_topup
