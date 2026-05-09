@@ -27,8 +27,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://agentnet.market"
-Repository = "https://github.com/TejasKumar3005/Agent-net"
-Issues = "https://github.com/TejasKumar3005/Agent-net/issues"
+Repository = "https://github.com/TheAgent-net/agentnet-cli"
+Issues = "https://github.com/TheAgent-net/agentnet-cli/issues"
 
 [project.scripts]
 agentnet = "agentnet_cli.main:app"
