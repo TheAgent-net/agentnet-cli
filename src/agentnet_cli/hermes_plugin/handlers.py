@@ -4,8 +4,8 @@ import json
 import os
 from typing import Any
 
-from ..config import load_config
-from ..mcp.tools import ToolHandlers
+from agentnet_cli.config import load_config
+from agentnet_cli.mcp.tools import ToolHandlers
 
 _NO_TOKEN_ERROR = json.dumps({"error": "Not registered. Run 'agentnet register' first."})
 
