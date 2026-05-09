@@ -162,3 +162,17 @@ def test_connect_not_registered(fake_home):
     """Connect without prior registration — shows 'Not registered' error."""
     result = runner.invoke(app, ["connect", "claude"])
     assert result.exit_code != 0 or "not registered" in result.stdout.lower()
+
+
+def test_hint_emitted_when_claudecode_set(fake_home, monkeypatch):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    result = runner.invoke(app, ["detect"])
+    combined = result.output + (getattr(result, "stderr", "") or "")
+    assert "<claude-code-hint" in combined
+
+
+def test_hint_not_emitted_normally(fake_home, monkeypatch):
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    result = runner.invoke(app, ["detect"])
+    combined = result.output + (getattr(result, "stderr", "") or "")
+    assert "<claude-code-hint" not in combined

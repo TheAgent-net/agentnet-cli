@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 from typing import Optional
 
 import typer
@@ -35,6 +37,12 @@ def main(
         refresh_stale_connections(quiet=True)
     except Exception:
         pass
+
+    if os.environ.get("CLAUDECODE"):
+        print(
+            '<claude-code-hint v="1" type="plugin" value="agentnet@agentnet-cli" />',
+            file=sys.stderr,
+        )
 
 
 @app.command()
