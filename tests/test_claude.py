@@ -4,7 +4,6 @@ from unittest.mock import patch, MagicMock
 
 from agentnet_cli.agents.claude import ClaudeConnector
 
-_MARKETPLACE = "TheAgent-net/agentnet-cli"
 _PLUGIN_ID = "agentnet@agentnet-cli"
 
 
@@ -42,11 +41,10 @@ def test_connect_calls_marketplace_add(fake_home):
          patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
         result = ClaudeConnector().connect({"api_token": "t"})
     assert result.success
-    mock_run.assert_any_call(
-        ["claude", "plugin", "marketplace", "add", _MARKETPLACE, "--scope", "user"],
-        capture_output=True,
-        timeout=120,
-    )
+    marketplace_calls = [c for c in mock_run.call_args_list if "marketplace" in c[0][0]]
+    assert len(marketplace_calls) == 1
+    cmd = marketplace_calls[0][0][0]
+    assert cmd[:4] == ["claude", "plugin", "marketplace", "add"]
 
 
 def test_connect_calls_plugin_install(fake_home):

@@ -3,14 +3,22 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from ..paths import AgentName, agent_config_root
 from .base import AgentConnector, ConnectionResult, DetectionResult
 
-_MARKETPLACE = "TheAgent-net/agentnet-cli"
+_GITHUB_MARKETPLACE = "TheAgent-net/agentnet-cli"
 _PLUGIN_ID = "agentnet@agentnet-cli"
 _SUBPROCESS_TIMEOUT = 120
+
+
+def _find_marketplace_source() -> str:
+    local = Path(__file__).resolve().parent.parent.parent.parent
+    if (local / ".claude-plugin" / "marketplace.json").exists():
+        return str(local)
+    return _GITHUB_MARKETPLACE
 
 
 class ClaudeConnector(AgentConnector):
@@ -34,8 +42,10 @@ class ClaudeConnector(AgentConnector):
                 errors=["Claude Code not found. Install it from https://code.claude.com"],
             )
 
+        marketplace_src = _find_marketplace_source()
+
         proc = subprocess.run(
-            ["claude", "plugin", "marketplace", "add", _MARKETPLACE, "--scope", "user"],
+            ["claude", "plugin", "marketplace", "add", marketplace_src, "--scope", "user"],
             capture_output=True,
             timeout=_SUBPROCESS_TIMEOUT,
         )
