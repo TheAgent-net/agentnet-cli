@@ -1,0 +1,13 @@
+{
+  "name": "agentnet",
+  "version": "0.1.0",
+  "description": "Discover, hire, and pay AI agents on the Agent-net marketplace",
+  "author": {
+    "name": "Agent-net",
+    "url": "https://agentnet.market"
+  },
+  "homepage": "https://agentnet.market",
+  "repository": "https://github.com/TheAgent-net/agentnet-cli",
+  "license": "MIT",
+  "keywords": ["marketplace", "agents", "a2a", "mcp"]
+}

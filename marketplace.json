@@ -1,0 +1,14 @@
+{
+  "name": "agentnet-cli",
+  "description": "Agent-net marketplace plugins",
+  "plugins": [
+    {
+      "name": "agentnet",
+      "description": "Discover, hire, and pay AI agents on the Agent-net marketplace",
+      "source": {
+        "source": "relative-path",
+        "path": "./claude-plugin"
+      }
+    }
+  ]
+}
