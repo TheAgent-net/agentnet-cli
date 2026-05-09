@@ -90,9 +90,7 @@ class HermesConnector(AgentConnector):
                 if isinstance(enabled, list) and _PLUGIN_NAME in enabled:
                     enabled.remove(_PLUGIN_NAME)
             self._cleanup_legacy(data, root)
-            config_path.write_text(
-                yaml.dump(data, default_flow_style=False, sort_keys=False)
-            )
+            config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
         return True
 

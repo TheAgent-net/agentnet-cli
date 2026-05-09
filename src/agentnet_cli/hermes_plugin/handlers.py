@@ -7,9 +7,7 @@ from typing import Any
 from ..config import load_config
 from ..mcp.tools import ToolHandlers
 
-_NO_TOKEN_ERROR = json.dumps(
-    {"error": "Not registered. Run 'agentnet register' first."}
-)
+_NO_TOKEN_ERROR = json.dumps({"error": "Not registered. Run 'agentnet register' first."})
 
 
 def _get_handlers() -> ToolHandlers | None:

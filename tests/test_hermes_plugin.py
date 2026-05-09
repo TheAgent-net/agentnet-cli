@@ -1,3 +1,9 @@
+import inspect
+import json
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from agentnet_cli.hermes_plugin import handlers, register
 from agentnet_cli.hermes_plugin.schemas import SCHEMAS
 
 EXPECTED_TOOL_NAMES = [
@@ -24,15 +30,6 @@ def test_schemas_use_parameters_not_input_schema():
         assert "inputSchema" not in schema, f"{schema['name']} should not have 'inputSchema'"
         assert "description" in schema
         assert "name" in schema
-
-
-# --- Handler tests ---
-
-import inspect
-import json
-from unittest.mock import MagicMock, patch
-
-from agentnet_cli.hermes_plugin import handlers
 
 
 def test_handler_no_token(monkeypatch):
@@ -90,16 +87,9 @@ def test_handler_kwargs_accepted():
             fn = getattr(handlers, name)
             sig = inspect.signature(fn)
             params = list(sig.parameters.values())
-            assert any(
-                p.kind == inspect.Parameter.VAR_KEYWORD for p in params
-            ), f"{name} must accept **kwargs"
-
-
-# --- Registration tests ---
-
-from pathlib import Path
-
-from agentnet_cli.hermes_plugin import register
+            assert any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params), (
+                f"{name} must accept **kwargs"
+            )
 
 
 def test_register_tools():
