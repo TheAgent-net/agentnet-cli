@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,42 @@ def _hermes_plugin_source() -> Path:
     from ..hermes_plugin import _PLUGIN_DIR  # noqa: PLC0415
 
     return _PLUGIN_DIR
+
+
+def _find_hermes_venv(root: Path) -> Path | None:
+    candidates = [
+        root / "hermes-agent" / "venv",
+        root / "venv",
+    ]
+    for venv in candidates:
+        if (venv / "bin" / "python").exists() or (venv / "Scripts" / "python.exe").exists():
+            return venv
+    return None
+
+
+def _install_into_hermes_venv(venv: Path) -> bool:
+    python = venv / "bin" / "python"
+    if not python.exists():
+        python = venv / "Scripts" / "python.exe"
+    if not python.exists():
+        return False
+
+    try:
+        if shutil.which("uv"):
+            subprocess.run(
+                ["uv", "pip", "install", "agentnet-cli", "--python", str(python)],
+                capture_output=True,
+                timeout=120,
+            )
+        else:
+            subprocess.run(
+                [str(python), "-m", "pip", "install", "agentnet-cli"],
+                capture_output=True,
+                timeout=120,
+            )
+        return True
+    except Exception:
+        return False
 
 
 class HermesConnector(AgentConnector):
@@ -35,6 +72,10 @@ class HermesConnector(AgentConnector):
         root = agent_config_root(AgentName.HERMES)
         config_path = root / "config.yaml"
         plugin_dir = root / "plugins" / _PLUGIN_NAME
+
+        hermes_venv = _find_hermes_venv(root)
+        if hermes_venv:
+            _install_into_hermes_venv(hermes_venv)
 
         source = _hermes_plugin_source()
         if plugin_dir.exists():
