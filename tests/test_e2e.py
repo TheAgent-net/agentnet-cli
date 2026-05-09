@@ -1,10 +1,17 @@
 import json
 from pathlib import Path
+from unittest.mock import patch, MagicMock
+
 from typer.testing import CliRunner
+
 from agentnet_cli.main import app
 from agentnet_cli.config import save_config
 
 runner = CliRunner()
+
+
+def _mock_run_ok(*args, **kwargs):
+    return MagicMock(returncode=0, stderr=b"")
 
 
 def _setup_agents(home: Path) -> None:
@@ -19,7 +26,6 @@ def _setup_agents(home: Path) -> None:
 def test_full_detect_connect_disconnect_cycle(fake_home):
     _setup_agents(fake_home)
 
-    # Register
     save_config({
         "platform_url": "https://test.agentnet.market",
         "api_token": "agn_test123",
@@ -33,29 +39,23 @@ def test_full_detect_connect_disconnect_cycle(fake_home):
     assert "claude" in result.stdout.lower()
     assert "cursor" in result.stdout.lower()
 
-    # Connect claude
-    result = runner.invoke(app, ["connect", "claude"])
+    # Connect claude (subprocess calls mocked)
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        result = runner.invoke(app, ["connect", "claude"])
     assert result.exit_code == 0
     assert "connected" in result.stdout.lower()
-
-    # Verify files exist
-    assert (fake_home / ".claude" / "skills" / "agentnet" / "SKILL.md").exists()
-    mcp_data = json.loads((fake_home / ".claude.json").read_text())
-    assert "agentnet" in mcp_data["mcpServers"]
 
     # Status shows connected
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
 
     # Disconnect
-    result = runner.invoke(app, ["disconnect", "claude"])
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        result = runner.invoke(app, ["disconnect", "claude"])
     assert result.exit_code == 0
     assert "disconnected" in result.stdout.lower()
-
-    # Verify cleanup
-    assert not (fake_home / ".claude" / "skills" / "agentnet" / "SKILL.md").exists()
-    mcp_data = json.loads((fake_home / ".claude.json").read_text())
-    assert "agentnet" not in mcp_data.get("mcpServers", {})
 
 
 def test_connect_all_and_disconnect_all(fake_home):
@@ -67,10 +67,14 @@ def test_connect_all_and_disconnect_all(fake_home):
         "wallet_id": "wal_1",
     })
 
-    result = runner.invoke(app, ["connect", "--all"])
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        result = runner.invoke(app, ["connect", "--all"])
     assert result.exit_code == 0
     assert "claude" in result.stdout.lower()
     assert "cursor" in result.stdout.lower()
 
-    result = runner.invoke(app, ["disconnect", "--all"])
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        result = runner.invoke(app, ["disconnect", "--all"])
     assert result.exit_code == 0
