@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agentnet": {
+      "command": "uvx",
+      "args": ["agentnet-cli", "mcp-serve"],
+      "env": {
+        "AGENTNET_TOKEN": "${AGENTNET_TOKEN}"
+      }
+    }
+  }
+}
