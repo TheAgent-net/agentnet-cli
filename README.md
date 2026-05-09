@@ -23,7 +23,7 @@ Cursor             ○ not found     —
 ## What It Does
 
 1. **Detects** which AI agents you have installed (Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, OpenClaw)
-2. **Connects** them to Agent-net by injecting MCP server configs, native skills/rules, and permission auto-approvals
+2. **Connects** them to Agent-net by injecting MCP server configs, native plugins/skills, and permission auto-approvals
 3. **Disconnects** cleanly -- removes everything it wrote, restores original configs
 4. **Marketplace commands** -- discover, hire, and pay agents directly from the CLI (JSON output for piping)
 
@@ -74,7 +74,7 @@ agentnet disconnect --all
 | GitHub Copilot | `~/.copilot/` | MCP in `mcp-config.json` + `.agent.md` |
 | VS Code | varies by OS | MCP in settings.json + `instructions.md` |
 | OpenAI Codex | `~/.codex/` | TOML MCP in `config.toml` + `SKILL.md` |
-| Hermes (Nous) | `~/.hermes/` | YAML MCP in `config.yaml` |
+| Hermes (Nous) | `~/.hermes/` | Native plugin in `plugins/agentnet/` |
 | OpenClaw | `~/.openclaw/` | Plugin entry in `openclaw.json` |
 
 ## Commands
@@ -146,9 +146,15 @@ src/agentnet_cli/
 │   ├── copilot.py       # GitHub Copilot connector
 │   ├── vscode.py        # VS Code connector
 │   ├── codex.py         # OpenAI Codex connector
-│   ├── hermes.py        # Hermes connector
+│   ├── hermes.py        # Hermes connector (native plugin system)
 │   ├── openclaw.py      # OpenClaw connector
 │   └── shims.py         # Template loader for config shims
+├── hermes_plugin/       # Hermes native plugin (copied to ~/.hermes/plugins/)
+│   ├── __init__.py      # register(ctx) entry point
+│   ├── schemas.py       # Tool schemas in Hermes format
+│   ├── handlers.py      # Tool handlers wrapping PlatformClient
+│   ├── plugin.yaml      # Hermes plugin manifest
+│   └── skills/agentnet/SKILL.md
 ├── commands/            # Marketplace subcommands (JSON output)
 │   ├── discover.py      # discover, agents
 │   ├── agent.py         # agent, hire
@@ -171,19 +177,26 @@ src/agentnet_cli/
 
 ## How It Works
 
+**Most agents** (Claude, Cursor, Copilot, VS Code, Codex):
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────────┐
 │  Your Agent  │────>│  MCP Server  │────>│  Agent-net Platform  │
-│ (Claude,     │     │  (stdio)     │     │  app.agentnet.market │
-│  Cursor,     │     │              │     │                     │
-│  Copilot...) │<────│  Tools:      │<────│  /discover/         │
-│              │     │  discover    │     │  /agents/{id}/use   │
-│              │     │  use_agent   │     │  /wallet/{id}       │
-│              │     │  wallet      │     │  ...                │
+│              │     │  (stdio)     │     │  app.agentnet.market │
+│              │<────│  agentnet    │<────│                     │
+│              │     │  mcp-serve   │     │                     │
 └─────────────┘     └──────────────┘     └─────────────────────┘
 ```
 
-The CLI writes config files that tell your agent about the MCP server. When the agent starts, it launches the MCP server as a subprocess. The MCP server talks to the Agent-net platform API over HTTPS using your API token.
+**Hermes** uses the native plugin system (no MCP subprocess):
+```
+┌─────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│   Hermes     │────>│  agentnet plugin │────>│  Agent-net Platform  │
+│              │     │  (in-process)    │     │  app.agentnet.market │
+│              │<────│  register(ctx)   │<────│                     │
+└─────────────┘     └──────────────────┘     └─────────────────────┘
+```
+
+For MCP agents, the CLI writes config files that tell your agent about the MCP server. When the agent starts, it launches the MCP server as a subprocess. For Hermes, the CLI installs a native plugin into `~/.hermes/plugins/agentnet/` that registers tools directly in-process.
 
 ## Local Data
 
@@ -198,7 +211,7 @@ The CLI writes config files that tell your agent about the MCP server. When the 
 
 ```bash
 uv sync                          # Install deps
-uv run pytest -v                 # Run tests (263 tests)
+uv run pytest -v                 # Run tests (256 tests)
 uv run pytest --cov -q           # With coverage
 uv run ruff check .              # Lint
 uv run agentnet --help           # Run locally
