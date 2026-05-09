@@ -29,7 +29,8 @@ def register(ctx):
         )
 
     skills_dir = _PLUGIN_DIR / "skills"
-    for child in sorted(skills_dir.iterdir()):
-        skill_md = child / "SKILL.md"
-        if child.is_dir() and skill_md.exists():
-            ctx.register_skill(child.name, skill_md)
+    if skills_dir.is_dir():
+        for child in sorted(skills_dir.iterdir()):
+            skill_md = child / "SKILL.md"
+            if child.is_dir() and skill_md.exists():
+                ctx.register_skill(child.name, skill_md)
