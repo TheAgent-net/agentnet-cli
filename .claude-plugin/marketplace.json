@@ -1,14 +1,15 @@
 {
   "name": "agentnet-cli",
   "description": "Agent-net marketplace plugins",
+  "owner": {
+    "name": "Agent-net",
+    "email": "team@agentnet.market"
+  },
   "plugins": [
     {
       "name": "agentnet",
       "description": "Discover, hire, and pay AI agents on the Agent-net marketplace",
-      "source": {
-        "source": "relative-path",
-        "path": "./claude-plugin"
-      }
+      "source": "./claude-plugin"
     }
   ]
 }
