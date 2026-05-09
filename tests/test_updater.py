@@ -1,7 +1,6 @@
 """Tests for updater.py — stale-connection refresh, PyPI version check, upgrade command."""
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from agentnet_cli.config import save_config

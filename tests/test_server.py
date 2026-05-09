@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import io
 import json
-import sys
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -263,7 +262,7 @@ class TestToolsCallRaises:
             mock_instance.discover.side_effect = RuntimeError("upstream down")
             serve()
 
-        responses = [json.loads(l) for l in stdout.getvalue().strip().split("\n") if l.strip()]
+        responses = [json.loads(line) for line in stdout.getvalue().strip().split("\n") if line.strip()]
         assert len(responses) == 1
         err = responses[0]["error"]
         assert err["code"] == -32000
@@ -303,7 +302,7 @@ class TestToolsCallTypeError:
             mock_instance.discover.side_effect = TypeError("unexpected keyword argument 'bad'")
             serve()
 
-        responses = [json.loads(l) for l in stdout.getvalue().strip().split("\n") if l.strip()]
+        responses = [json.loads(line) for line in stdout.getvalue().strip().split("\n") if line.strip()]
         assert len(responses) == 1
         err = responses[0]["error"]
         assert err["code"] == -32602

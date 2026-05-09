@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rich.console import Console
 
-from .agents.registry import all_connectors, get_connector
+from .agents.registry import get_connector
 from .config import load_config
 from .detect import detect_all
 from .manifest import record_connection

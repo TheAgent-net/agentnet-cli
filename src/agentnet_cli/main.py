@@ -163,7 +163,7 @@ def set_path(
         display = agent_display_name(AgentName(agent))
     except ValueError:
         console.print(f"[red]Error:[/red] Unknown agent [bold]{agent}[/bold]")
-        console.print(f"  [dim]Available: claude, cursor, copilot, vscode, codex, hermes, openclaw[/dim]")
+        console.print("  [dim]Available: claude, cursor, copilot, vscode, codex, hermes, openclaw[/dim]")
         raise SystemExit(1)
 
     resolved = P(path).expanduser().resolve()
@@ -187,7 +187,7 @@ def clear_path(
         display = agent_display_name(AgentName(agent))
     except ValueError:
         console.print(f"[red]Error:[/red] Unknown agent [bold]{agent}[/bold]")
-        console.print(f"  [dim]Available: claude, cursor, copilot, vscode, codex, hermes, openclaw[/dim]")
+        console.print("  [dim]Available: claude, cursor, copilot, vscode, codex, hermes, openclaw[/dim]")
         raise SystemExit(1)
 
     if remove_agent_path(agent):
@@ -240,22 +240,16 @@ def mcp_serve() -> None:
 
 
 # -- Marketplace commands --
-from .commands.discover import agents as _agents_fn
-from .commands.discover import discover as _discover_fn
+from .commands.agent import agent as _agent_fn  # noqa: E402
+from .commands.agent import hire as _hire_fn  # noqa: E402
+from .commands.discover import agents as _agents_fn  # noqa: E402
+from .commands.discover import discover as _discover_fn  # noqa: E402
+from .commands.session import session_app  # noqa: E402
+from .commands.wallet import wallet_app  # noqa: E402
 
 app.command(name="discover")(_discover_fn)
 app.command(name="agents")(_agents_fn)
-
-from .commands.agent import agent as _agent_fn
-from .commands.agent import hire as _hire_fn
-
 app.command(name="agent")(_agent_fn)
 app.command(name="hire")(_hire_fn)
-
-from .commands.wallet import wallet_app
-
 app.add_typer(wallet_app, name="wallet")
-
-from .commands.session import session_app
-
 app.add_typer(session_app, name="session")

@@ -1,5 +1,5 @@
 from pathlib import Path
-from agentnet_cli.manifest import load_manifest, save_manifest, record_connection, remove_connection
+from agentnet_cli.manifest import load_manifest, record_connection, remove_connection
 
 
 def test_empty_manifest_when_missing(fake_home):

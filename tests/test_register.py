@@ -1,6 +1,6 @@
 """Tests for register_command() — registration flow, agent selection, error handling."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 

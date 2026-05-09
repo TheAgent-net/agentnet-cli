@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from ..paths import AgentName, agent_config_root, agentnet_home
+from ..paths import AgentName, agent_config_root
 from .base import AgentConnector, ConnectionResult, DetectionResult
 from .shims import load_shim
 

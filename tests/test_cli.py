@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import patch
 from typer.testing import CliRunner
 from agentnet_cli.main import app
@@ -126,8 +125,8 @@ def test_update_command_already_latest(fake_home):
     """update when already on latest version just reports up-to-date."""
     from agentnet_cli import __version__
 
-    with patch("agentnet_cli.updater.refresh_stale_connections", return_value=0) as mock_refresh, \
-         patch("agentnet_cli.updater.check_pypi_latest", return_value=__version__) as mock_pypi:
+    with patch("agentnet_cli.updater.refresh_stale_connections", return_value=0), \
+         patch("agentnet_cli.updater.check_pypi_latest", return_value=__version__):
         result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     assert "latest" in result.stdout.lower() or "up to date" in result.stdout.lower()
@@ -135,8 +134,8 @@ def test_update_command_already_latest(fake_home):
 
 def test_update_command_pypi_unreachable(fake_home):
     """update when PyPI is unreachable still refreshes agent configs."""
-    with patch("agentnet_cli.updater.refresh_stale_connections", return_value=0) as mock_refresh, \
-         patch("agentnet_cli.updater.check_pypi_latest", return_value=None) as mock_pypi:
+    with patch("agentnet_cli.updater.refresh_stale_connections", return_value=0), \
+         patch("agentnet_cli.updater.check_pypi_latest", return_value=None):
         result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     assert "Could not reach PyPI" in result.stdout
