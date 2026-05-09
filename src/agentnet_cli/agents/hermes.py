@@ -85,7 +85,16 @@ class HermesConnector(AgentConnector):
         for cache_dir in plugin_dir.rglob("__pycache__"):
             shutil.rmtree(cache_dir)
 
+        skill_src = source / "skills" / _PLUGIN_NAME
+        skill_dst = root / "skills" / _PLUGIN_NAME
+        if skill_src.is_dir():
+            if skill_dst.exists():
+                shutil.rmtree(skill_dst)
+            shutil.copytree(skill_src, skill_dst)
+
         files_created = [f for f in plugin_dir.rglob("*") if f.is_file()]
+        if skill_dst.exists():
+            files_created.extend(f for f in skill_dst.rglob("*") if f.is_file())
 
         data: dict[str, Any] = {}
         if config_path.exists():
@@ -123,6 +132,10 @@ class HermesConnector(AgentConnector):
         if plugin_dir.exists():
             shutil.rmtree(plugin_dir)
 
+        skill_dir = root / "skills" / _PLUGIN_NAME
+        if skill_dir.exists():
+            shutil.rmtree(skill_dir)
+
         if config_path.exists():
             data = yaml.safe_load(config_path.read_text()) or {}
             plugins = data.get("plugins", {})
@@ -156,7 +169,3 @@ class HermesConnector(AgentConnector):
         top_toolsets = data.get("toolsets")
         if isinstance(top_toolsets, list) and "mcp-agentnet" in top_toolsets:
             top_toolsets.remove("mcp-agentnet")
-
-        old_skill_dir = root / "skills" / "agentnet"
-        if old_skill_dir.exists():
-            shutil.rmtree(old_skill_dir)

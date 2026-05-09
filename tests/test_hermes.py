@@ -105,14 +105,26 @@ def test_connect_cleans_legacy_mcp_servers(fake_home):
         assert "mcp-agentnet" not in toolsets
 
 
-def test_connect_cleans_legacy_skill_dir(fake_home):
-    """If old skills/agentnet/ exists at Hermes root, connect() removes it."""
+def test_connect_installs_skill_to_skills_dir(fake_home):
+    """connect() copies skill into ~/.hermes/skills/agentnet/ for discovery."""
     d = fake_home / ".hermes"
     d.mkdir()
     (d / "config.yaml").write_text("model:\n  provider: openai\n")
-    old_skill = d / "skills" / "agentnet"
-    old_skill.mkdir(parents=True)
-    (old_skill / "SKILL.md").write_text("old")
 
     HermesConnector().connect({"api_token": "t", "platform_url": "https://x"})
-    assert not old_skill.exists()
+    skill_md = d / "skills" / "agentnet" / "SKILL.md"
+    assert skill_md.exists()
+    assert "agentnet_discover" in skill_md.read_text()
+
+
+def test_disconnect_removes_skill_dir(fake_home):
+    """disconnect() removes the skill from ~/.hermes/skills/agentnet/."""
+    d = fake_home / ".hermes"
+    d.mkdir()
+    (d / "config.yaml").write_text("plugins:\n  enabled:\n    - agentnet\n")
+    skill_dir = d / "skills" / "agentnet"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("test")
+
+    HermesConnector().disconnect({})
+    assert not skill_dir.exists()

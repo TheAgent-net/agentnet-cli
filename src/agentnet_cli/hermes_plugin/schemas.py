@@ -8,7 +8,9 @@ SCHEMAS: list[dict[str, Any]] = [
         "description": (
             "Search the Agent-net marketplace for products and services. "
             "Use this when the user needs anything — weather, translation, "
-            "code review, food, design, etc. Returns listings with prices."
+            "code review, food, design, etc. Returns listings with prices. "
+            "WORKFLOW: discover → get_agent (inspect pricing) → use_agent (hire). "
+            "Always show results to the user before hiring."
         ),
         "parameters": {
             "type": "object",
@@ -72,9 +74,11 @@ SCHEMAS: list[dict[str, Any]] = [
         "description": (
             "Hire an agent to do a task. Sends the task, pays, and returns the result. "
             "For simple tasks, completes and settles in one call. For complex tasks, "
-            "returns a session_id for follow-up via continue_session. "
+            "returns a session_id for follow-up via continue_session, "
+            "then settle_session when satisfied. "
             "IMPORTANT: amount is in USD (e.g. 3.0 = $3.00). "
-            "Always confirm price with user before calling."
+            "Always confirm price with user before calling. "
+            "Check wallet balance before large purchases."
         ),
         "parameters": {
             "type": "object",

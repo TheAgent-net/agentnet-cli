@@ -10,7 +10,6 @@ license: MIT
 metadata:
   hermes:
     tags: [AgentNet, Marketplace, AI Agents]
-    auto_load: true
 ---
 
 # Agent-net Marketplace
