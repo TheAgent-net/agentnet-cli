@@ -1,6 +1,11 @@
 import json
 from pathlib import Path
+from unittest.mock import patch, MagicMock
+
 from agentnet_cli.agents.claude import ClaudeConnector
+
+_MARKETPLACE = "TheAgent-net/agentnet-cli"
+_PLUGIN_ID = "agentnet@agentnet-cli"
 
 
 def _setup_claude(home: Path) -> None:
@@ -9,63 +14,139 @@ def _setup_claude(home: Path) -> None:
     (d / "settings.json").write_text("{}")
 
 
+def _mock_run_ok(*args, **kwargs):
+    return MagicMock(returncode=0, stderr=b"")
+
+
+# --- detect (unchanged logic) ---
+
+
 def test_detect_found(fake_home):
     _setup_claude(fake_home)
-    c = ClaudeConnector()
-    r = c.detect()
+    r = ClaudeConnector().detect()
     assert r.detected is True
     assert r.config_root == fake_home / ".claude"
 
 
 def test_detect_not_found(fake_home):
-    c = ClaudeConnector()
-    r = c.detect()
+    r = ClaudeConnector().detect()
     assert r.detected is False
 
 
-def test_connect_creates_skill(fake_home):
+# --- connect ---
+
+
+def test_connect_calls_marketplace_add(fake_home):
     _setup_claude(fake_home)
-    c = ClaudeConnector()
-    result = c.connect({"api_token": "agn_test", "platform_url": "https://test.agentnet.market"})
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
+        result = ClaudeConnector().connect({"api_token": "t"})
     assert result.success
-    skill_path = fake_home / ".claude" / "skills" / "agentnet" / "SKILL.md"
-    assert skill_path.exists()
-    content = skill_path.read_text()
-    assert "agentnet_discover" in content
+    mock_run.assert_any_call(
+        ["claude", "plugin", "marketplace", "add", _MARKETPLACE, "--scope", "user"],
+        capture_output=True,
+        timeout=120,
+    )
 
 
-def test_connect_writes_mcp_to_claude_json(fake_home):
+def test_connect_calls_plugin_install(fake_home):
+    _setup_claude(fake_home)
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
+        result = ClaudeConnector().connect({"api_token": "t"})
+    assert result.success
+    mock_run.assert_any_call(
+        ["claude", "plugin", "install", _PLUGIN_ID, "--scope", "user"],
+        capture_output=True,
+        timeout=120,
+    )
+
+
+def test_connect_no_claude_binary(fake_home):
+    _setup_claude(fake_home)
+    with patch("shutil.which", return_value=None):
+        result = ClaudeConnector().connect({"api_token": "t"})
+    assert result.success is False
+    assert any("Claude Code" in e for e in result.errors)
+
+
+def test_connect_install_failure(fake_home):
+    _setup_claude(fake_home)
+    fail = MagicMock(returncode=1, stderr=b"network error")
+
+    def side_effect(cmd, **kw):
+        if "install" in cmd:
+            return fail
+        return MagicMock(returncode=0, stderr=b"")
+
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=side_effect):
+        result = ClaudeConnector().connect({"api_token": "t"})
+    assert result.success is False
+    assert any("network error" in e for e in result.errors)
+
+
+def test_connect_cleans_legacy_skill(fake_home):
+    _setup_claude(fake_home)
+    skill_dir = fake_home / ".claude" / "skills" / "agentnet"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("old")
+
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        ClaudeConnector().connect({"api_token": "t"})
+
+    assert not (skill_dir / "SKILL.md").exists()
+
+
+def test_connect_cleans_legacy_mcp(fake_home):
     _setup_claude(fake_home)
     claude_json = fake_home / ".claude.json"
-    claude_json.write_text("{}")
-    c = ClaudeConnector()
-    result = c.connect({"api_token": "agn_test", "platform_url": "https://test.agentnet.market"})
-    assert result.success
-    data = json.loads(claude_json.read_text())
-    assert "agentnet" in data.get("mcpServers", {})
+    claude_json.write_text(json.dumps({
+        "mcpServers": {"agentnet": {"command": "uvx"}, "other": {"command": "x"}},
+    }))
 
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        ClaudeConnector().connect({"api_token": "t"})
 
-def test_connect_merges_existing_mcp(fake_home):
-    _setup_claude(fake_home)
-    claude_json = fake_home / ".claude.json"
-    claude_json.write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}}))
-    c = ClaudeConnector()
-    c.connect({"api_token": "agn_test", "platform_url": "https://test.agentnet.market"})
     data = json.loads(claude_json.read_text())
+    assert "agentnet" not in data["mcpServers"]
     assert "other" in data["mcpServers"]
-    assert "agentnet" in data["mcpServers"]
 
 
-def test_disconnect_removes_files(fake_home):
+def test_connect_cleans_legacy_permissions(fake_home):
     _setup_claude(fake_home)
-    c = ClaudeConnector()
-    result = c.connect({"api_token": "agn_test", "platform_url": "https://test.agentnet.market"})
-    manifest_entry = {
-        "files_created": [str(p) for p in result.files_created],
-        "files_modified": [],
-        "mcp_registered": result.mcp_entry,
-    }
-    ok = c.disconnect(manifest_entry)
+    settings = fake_home / ".claude" / "settings.json"
+    settings.write_text(json.dumps({
+        "permissions": {"allow": ["mcp__agentnet__*", "other_rule"]},
+    }))
+
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        ClaudeConnector().connect({"api_token": "t"})
+
+    data = json.loads(settings.read_text())
+    assert "mcp__agentnet__*" not in data["permissions"]["allow"]
+    assert "other_rule" in data["permissions"]["allow"]
+
+
+# --- disconnect ---
+
+
+def test_disconnect_calls_plugin_uninstall(fake_home):
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
+        ok = ClaudeConnector().disconnect({})
     assert ok
-    skill_path = fake_home / ".claude" / "skills" / "agentnet" / "SKILL.md"
-    assert not skill_path.exists()
+    mock_run.assert_called_once_with(
+        ["claude", "plugin", "uninstall", _PLUGIN_ID, "--scope", "user", "-y"],
+        capture_output=True,
+        timeout=120,
+    )
+
+
+def test_disconnect_no_claude_binary(fake_home):
+    with patch("shutil.which", return_value=None):
+        ok = ClaudeConnector().disconnect({})
+    assert ok
