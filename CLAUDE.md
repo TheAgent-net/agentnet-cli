@@ -8,7 +8,7 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
-- **Testing:** pytest (203 tests), pytest-cov
+- **Testing:** pytest (264 tests), pytest-cov
 - **CI:** GitHub Actions (lint + test matrix on 3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 
@@ -30,12 +30,12 @@ src/agentnet_cli/
 ├── agents/              # Per-agent connectors (7 agents)
 │   ├── base.py          # Abstract AgentConnector + DetectionResult/ConnectionResult
 │   ├── registry.py      # AgentName -> connector factory
-│   ├── claude.py        # Claude Code
+│   ├── claude.py        # Claude Code (delegates to `claude plugin` CLI)
 │   ├── cursor.py        # Cursor IDE
 │   ├── copilot.py       # GitHub Copilot
 │   ├── vscode.py        # VS Code
 │   ├── codex.py         # OpenAI Codex
-│   ├── hermes.py        # Hermes (Nous)
+│   ├── hermes.py        # Hermes (native plugin system)
 │   ├── openclaw.py      # OpenClaw
 │   └── shims.py         # Template loader for config shims
 ├── commands/            # Marketplace subcommands (JSON output)
@@ -49,7 +49,20 @@ src/agentnet_cli/
 └── platform/
     └── client.py        # PlatformClient (httpx REST wrapper)
 
-tests/                   # 23 test files, 203 test functions
+claude-plugin/           # Claude Code native plugin (installed via marketplace)
+├── .claude-plugin/
+│   └── plugin.json      # Plugin manifest
+├── skills/agentnet/
+│   └── SKILL.md         # Skill with marketplace context
+├── agents/
+│   └── marketplace.md   # Marketplace subagent
+├── hooks/
+│   └── hooks.json       # SessionStart auth check
+└── .mcp.json            # MCP server config
+
+marketplace.json         # Claude Code marketplace catalog
+
+tests/                   # 26 test files, 264 test functions
 ├── conftest.py          # fake_home fixture (patches Path.home())
 ├── test_cli.py          # CLI command tests (CliRunner)
 ├── test_server.py       # MCP server tests
@@ -75,6 +88,9 @@ uv run agentnet --help           # Run locally
 - **Config persistence:** `~/.agentnet/config.json` stores platform credentials (0600 permissions). Agent custom paths stored separately.
 - **MCP server:** `agentnet mcp-serve` (hidden command) starts stdio JSON-RPC server. Agents launch this as a subprocess.
 - **Marketplace commands:** All output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
+- **Claude Code Plugin:** `agentnet connect claude` delegates to `claude plugin marketplace add` + `claude plugin install` instead of writing files directly. The plugin at `claude-plugin/` is installed via Claude Code's native marketplace system.
+- **Hermes Plugin:** `agentnet connect hermes` copies the plugin to `~/.hermes/plugins/agentnet/` and skills to `~/.hermes/skills/agentnet/`, using Hermes's native plugin system.
+- **Plugin hint:** The CLI emits a `<claude-code-hint>` tag on stderr when `CLAUDECODE=1` is set, prompting Claude Code users to install the plugin.
 
 ## Testing Patterns
 
