@@ -145,3 +145,9 @@ def test_skill_md_exists():
     content = skill_md.read_text()
     assert "agentnet_discover" in content
     assert "Agent-net" in content
+
+
+def test_entry_point_importable():
+    import agentnet_cli.hermes_plugin as hp
+
+    assert callable(hp.register)
