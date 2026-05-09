@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -f ~/.agentnet/config.json || echo '[AgentNet] Not authenticated. Run: agentnet register' >&2"
+          }
+        ]
+      }
+    ]
+  }
+}
