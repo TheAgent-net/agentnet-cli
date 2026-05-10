@@ -13,7 +13,7 @@
     "url": "https://github.com/TheAgent-net/agentnet-cli"
   },
   "openclaw": {
-    "extensions": ["./index.ts"],
+    "extensions": ["./index.js"],
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2"
     },
