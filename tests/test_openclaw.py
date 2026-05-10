@@ -35,7 +35,7 @@ def test_detect_not_found(fake_home):
 # --- connect ---
 
 
-def test_connect_calls_plugin_install(fake_home):
+def test_connect_calls_plugin_install_and_mcp_set(fake_home):
     _setup_openclaw(fake_home)
     with patch("shutil.which", return_value="/usr/bin/openclaw"), \
          patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
@@ -46,6 +46,9 @@ def test_connect_calls_plugin_install(fake_home):
     cmd = install_calls[0][0][0]
     assert cmd[:3] == ["openclaw", "plugins", "install"]
     assert "--force" in cmd
+    mcp_calls = [c for c in mock_run.call_args_list if c[0][0][:3] == ["openclaw", "mcp", "set"]]
+    assert len(mcp_calls) == 1
+    assert mcp_calls[0][0][0][3] == "agentnet"
 
 
 def test_connect_no_openclaw_binary(fake_home):
@@ -99,16 +102,15 @@ def test_connect_cleans_legacy_backup(fake_home):
 # --- disconnect ---
 
 
-def test_disconnect_calls_plugin_uninstall(fake_home):
+def test_disconnect_calls_mcp_unset_and_plugin_uninstall(fake_home):
     with patch("shutil.which", return_value="/usr/bin/openclaw"), \
          patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
         ok = OpenClawConnector().disconnect({})
     assert ok
-    mock_run.assert_called_once_with(
-        ["openclaw", "plugins", "uninstall", _PLUGIN_ID, "--force"],
-        capture_output=True,
-        timeout=120,
-    )
+    calls = mock_run.call_args_list
+    assert len(calls) == 2
+    assert calls[0][0][0] == ["openclaw", "mcp", "unset", "agentnet"]
+    assert calls[1][0][0] == ["openclaw", "plugins", "uninstall", _PLUGIN_ID, "--force"]
 
 
 def test_disconnect_no_openclaw_binary(fake_home):

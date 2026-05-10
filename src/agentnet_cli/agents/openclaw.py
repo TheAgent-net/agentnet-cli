@@ -11,6 +11,8 @@ from .base import AgentConnector, ConnectionResult, DetectionResult
 
 _CLAWHUB_PACKAGE = "clawhub:agentnet"
 _PLUGIN_ID = "agentnet"
+_MCP_SERVER_NAME = "agentnet"
+_MCP_SERVER_CONFIG = '{"command":"agentnet","args":["mcp-serve"]}'
 _SUBPROCESS_TIMEOUT = 120
 
 
@@ -49,6 +51,15 @@ class OpenClawConnector(AgentConnector):
             msg = proc.stderr.decode(errors="replace").strip()
             return ConnectionResult(success=False, errors=[f"plugin install failed: {msg}"])
 
+        proc = subprocess.run(
+            ["openclaw", "mcp", "set", _MCP_SERVER_NAME, _MCP_SERVER_CONFIG],
+            capture_output=True,
+            timeout=_SUBPROCESS_TIMEOUT,
+        )
+        if proc.returncode != 0:
+            msg = proc.stderr.decode(errors="replace").strip()
+            return ConnectionResult(success=False, errors=[f"mcp set failed: {msg}"])
+
         self._cleanup_legacy()
 
         return ConnectionResult(
@@ -61,6 +72,11 @@ class OpenClawConnector(AgentConnector):
         if not openclaw_bin:
             return True
 
+        subprocess.run(
+            ["openclaw", "mcp", "unset", _MCP_SERVER_NAME],
+            capture_output=True,
+            timeout=_SUBPROCESS_TIMEOUT,
+        )
         subprocess.run(
             ["openclaw", "plugins", "uninstall", _PLUGIN_ID, "--force"],
             capture_output=True,
