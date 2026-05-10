@@ -20,6 +20,8 @@ def _setup_agents(home: Path) -> None:
     (home / ".cursor" / "extensions").mkdir(parents=True)
     (home / ".codex").mkdir()
     (home / ".codex" / "config.toml").write_text("")
+    (home / ".openclaw").mkdir()
+    (home / ".openclaw" / "openclaw.json").write_text("{}")
 
 
 def test_full_detect_connect_disconnect_cycle(fake_home):
@@ -37,6 +39,7 @@ def test_full_detect_connect_disconnect_cycle(fake_home):
     assert result.exit_code == 0
     assert "claude" in result.stdout.lower()
     assert "cursor" in result.stdout.lower()
+    assert "openclaw" in result.stdout.lower()
 
     # Connect claude (subprocess calls mocked)
     with patch("shutil.which", return_value="/usr/bin/claude"), \
@@ -72,6 +75,7 @@ def test_connect_all_and_disconnect_all(fake_home):
     assert result.exit_code == 0
     assert "claude" in result.stdout.lower()
     assert "cursor" in result.stdout.lower()
+    assert "openclaw" in result.stdout.lower()
 
     with patch("shutil.which", return_value="/usr/bin/claude"), \
          patch("subprocess.run", side_effect=_mock_run_ok):
