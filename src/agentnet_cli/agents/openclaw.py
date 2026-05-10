@@ -1,11 +1,24 @@
 from __future__ import annotations
+
 import json
-import os
-import stat
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
+
 from ..paths import AgentName, agent_config_root, agentnet_home
 from .base import AgentConnector, ConnectionResult, DetectionResult
+
+_CLAWHUB_PACKAGE = "clawhub:agentnet"
+_PLUGIN_ID = "agentnet"
+_SUBPROCESS_TIMEOUT = 120
+
+
+def _find_plugin_source() -> str:
+    local = Path(__file__).resolve().parent.parent.parent.parent
+    if (local / "openclaw-plugin" / "openclaw.plugin.json").exists():
+        return str(local / "openclaw-plugin")
+    return _CLAWHUB_PACKAGE
 
 
 class OpenClawConnector(AgentConnector):
@@ -18,37 +31,63 @@ class OpenClawConnector(AgentConnector):
         return DetectionResult(agent_name=AgentName.OPENCLAW, detected=False)
 
     def connect(self, platform_config: dict[str, Any]) -> ConnectionResult:
-        root = agent_config_root(AgentName.OPENCLAW)
-        config_path = root / "openclaw.json"
-        data: dict[str, Any] = {}
-        if config_path.exists():
-            data = json.loads(config_path.read_text())
-            backup = agentnet_home() / "backups" / "openclaw" / "openclaw.json.bak"
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            backup.write_bytes(config_path.read_bytes())
-        plugins = data.setdefault("plugins", {})
-        plugins["agentnet-gateway"] = {
-            "enabled": True,
-            "config": {
-                "platformUrl": platform_config.get("platform_url", ""),
-                "platformToken": platform_config.get("api_token", ""),
-            },
-        }
-        config_path.write_text(json.dumps(data, indent=2) + "\n")
-        if os.name != "nt":
-            config_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        openclaw_bin = shutil.which("openclaw")
+        if not openclaw_bin:
+            return ConnectionResult(
+                success=False,
+                errors=["OpenClaw not found. Install it from https://docs.openclaw.ai"],
+            )
+
+        plugin_source = _find_plugin_source()
+
+        proc = subprocess.run(
+            ["openclaw", "plugins", "install", plugin_source],
+            capture_output=True,
+            timeout=_SUBPROCESS_TIMEOUT,
+        )
+        if proc.returncode != 0:
+            msg = proc.stderr.decode(errors="replace").strip()
+            return ConnectionResult(success=False, errors=[f"plugin install failed: {msg}"])
+
+        self._cleanup_legacy()
+
         return ConnectionResult(
             success=True,
-            mcp_entry={"scope": "user", "file": str(config_path), "server_name": "agentnet-gateway"},
+            mcp_entry={"scope": "plugin", "plugin_id": _PLUGIN_ID},
         )
 
     def disconnect(self, connection_manifest: dict[str, Any]) -> bool:
-        mcp_info = connection_manifest.get("mcp_registered", {})
-        mcp_file = mcp_info.get("file")
-        if mcp_file:
-            config_path = Path(mcp_file)
-            if config_path.exists():
-                data = json.loads(config_path.read_text())
-                data.get("plugins", {}).pop("agentnet-gateway", None)
-                config_path.write_text(json.dumps(data, indent=2) + "\n")
+        openclaw_bin = shutil.which("openclaw")
+        if not openclaw_bin:
+            return True
+
+        subprocess.run(
+            ["openclaw", "plugins", "uninstall", _PLUGIN_ID],
+            capture_output=True,
+            timeout=_SUBPROCESS_TIMEOUT,
+        )
         return True
+
+    @staticmethod
+    def _cleanup_legacy() -> None:
+        root = agent_config_root(AgentName.OPENCLAW)
+
+        config_path = root / "openclaw.json"
+        if config_path.exists():
+            try:
+                data = json.loads(config_path.read_text())
+                if "agentnet-gateway" in data.get("plugins", {}):
+                    data["plugins"].pop("agentnet-gateway")
+                    config_path.write_text(json.dumps(data, indent=2) + "\n")
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        backup = agentnet_home() / "backups" / "openclaw" / "openclaw.json.bak"
+        if backup.exists():
+            try:
+                backup.unlink()
+                backup_dir = backup.parent
+                if backup_dir.exists() and not any(backup_dir.iterdir()):
+                    backup_dir.rmdir()
+            except OSError:
+                pass
