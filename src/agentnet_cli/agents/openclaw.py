@@ -41,7 +41,7 @@ class OpenClawConnector(AgentConnector):
         plugin_source = _find_plugin_source()
 
         proc = subprocess.run(
-            ["openclaw", "plugins", "install", plugin_source],
+            ["openclaw", "plugins", "install", plugin_source, "--force"],
             capture_output=True,
             timeout=_SUBPROCESS_TIMEOUT,
         )
@@ -62,7 +62,7 @@ class OpenClawConnector(AgentConnector):
             return True
 
         subprocess.run(
-            ["openclaw", "plugins", "uninstall", _PLUGIN_ID],
+            ["openclaw", "plugins", "uninstall", _PLUGIN_ID, "--force"],
             capture_output=True,
             timeout=_SUBPROCESS_TIMEOUT,
         )

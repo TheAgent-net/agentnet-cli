@@ -65,7 +65,7 @@ marketplace.json         # Claude Code marketplace catalog
 openclaw-plugin/         # OpenClaw native plugin (installed via openclaw plugins install)
 ├── openclaw.plugin.json # Plugin manifest
 ├── package.json         # ClawHub publishing metadata
-├── index.ts             # Minimal TypeScript entry point
+├── index.js             # Minimal JavaScript entry point
 ├── skills/agentnet/
 │   └── SKILL.md         # Skill with marketplace context
 └── .mcp.json            # MCP server config (OpenClaw format)

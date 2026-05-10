@@ -45,6 +45,7 @@ def test_connect_calls_plugin_install(fake_home):
     assert len(install_calls) == 1
     cmd = install_calls[0][0][0]
     assert cmd[:3] == ["openclaw", "plugins", "install"]
+    assert "--force" in cmd
 
 
 def test_connect_no_openclaw_binary(fake_home):
@@ -104,7 +105,7 @@ def test_disconnect_calls_plugin_uninstall(fake_home):
         ok = OpenClawConnector().disconnect({})
     assert ok
     mock_run.assert_called_once_with(
-        ["openclaw", "plugins", "uninstall", _PLUGIN_ID],
+        ["openclaw", "plugins", "uninstall", _PLUGIN_ID, "--force"],
         capture_output=True,
         timeout=120,
     )
