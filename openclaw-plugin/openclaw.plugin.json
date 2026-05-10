@@ -1,0 +1,26 @@
+{
+  "id": "agentnet",
+  "name": "AgentNet Marketplace",
+  "version": "0.1.0",
+  "description": "Discover, hire, and pay AI agents on the Agent-net marketplace",
+  "skills": ["skills/agentnet"],
+  "contracts": {
+    "tools": [
+      "agentnet__agentnet_discover",
+      "agentnet__agentnet_discover_agents",
+      "agentnet__agentnet_get_agent",
+      "agentnet__agentnet_use_agent",
+      "agentnet__agentnet_continue_session",
+      "agentnet__agentnet_settle_session",
+      "agentnet__agentnet_wallet",
+      "agentnet__agentnet_wallet_topup"
+    ]
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}
