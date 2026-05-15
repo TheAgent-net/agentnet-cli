@@ -7,10 +7,8 @@ from typing import Sequence
 
 import click
 import typer
-from rich.console import Console, Group
-from rich.live import Live
+from rich.console import Console
 from rich.table import Table
-from rich.text import Text
 
 from .config import load_config
 from .connect import connect_command
@@ -103,13 +101,10 @@ def _radio_menu(question: str, options: Sequence[str], *, default: int = 0) -> i
 
     selected = default
     with _raw_terminal():
-        with Live(
-            _render_radio(question, options, selected),
-            console=console,
-            refresh_per_second=12,
-            transient=False,
-        ) as live:
+        with _hidden_cursor():
+            rendered_lines = 0
             while True:
+                rendered_lines = _draw_menu(_radio_lines(question, options, selected), rendered_lines)
                 key = _read_key()
                 if key == "up":
                     selected = (selected - 1) % len(options)
@@ -121,7 +116,6 @@ def _radio_menu(question: str, options: Sequence[str], *, default: int = 0) -> i
                     return int(key) - 1
                 elif key == "ctrl_c":
                     raise KeyboardInterrupt
-                live.update(_render_radio(question, options, selected))
 
 
 def _multi_select_menu(
@@ -142,13 +136,10 @@ def _multi_select_menu(
     cursor = 0
     checked = set(default_selected)
     with _raw_terminal():
-        with Live(
-            _render_multi(question, options, checked, cursor),
-            console=console,
-            refresh_per_second=12,
-            transient=False,
-        ) as live:
+        with _hidden_cursor():
+            rendered_lines = 0
             while True:
+                rendered_lines = _draw_menu(_multi_lines(question, options, checked, cursor), rendered_lines)
                 key = _read_key()
                 if key == "up":
                     cursor = (cursor - 1) % len(options)
@@ -173,7 +164,6 @@ def _multi_select_menu(
                         checked.add(idx)
                 elif key == "ctrl_c":
                     raise KeyboardInterrupt
-                live.update(_render_multi(question, options, checked, cursor))
 
 
 def _print_radio_snapshot(question: str, options: Sequence[str], selected: int) -> None:
@@ -199,32 +189,53 @@ def _print_multi_snapshot(
         console.print(f"  {marker} {box} {idx + 1}. {option}")
 
 
-def _render_radio(question: str, options: Sequence[str], selected: int) -> Group:
-    lines = [Text(f"  {question}", style="bold")]
+def _radio_lines(question: str, options: Sequence[str], selected: int) -> list[str]:
+    lines = [f"  {_ansi_bold(question)}", ""]
     for idx, option in enumerate(options):
-        marker = "●" if idx == selected else "○"
-        style = "green" if idx == selected else "dim"
-        lines.append(Text.assemble("  ", (marker, style), " ", option))
-    lines.append(Text(f"\n  Select [1-{len(options)}] ({selected + 1}):", style="dim"))
-    lines.append(Text("  Use ↑/↓ to move, Enter to select, or type a number.", style="dim"))
-    return Group(*lines)
+        marker = _ansi_green("●") if idx == selected else _ansi_dim("○")
+        lines.append(f"  {marker} {option}")
+    lines.append("")
+    lines.append(_ansi_dim(f"  Select [1-{len(options)}] ({selected + 1}):"))
+    lines.append(_ansi_dim("  Use ↑/↓ to move, Enter to select, or type a number."))
+    return lines
 
 
-def _render_multi(
+def _multi_lines(
     question: str,
     options: Sequence[str],
     checked: set[int],
     cursor: int,
-) -> Group:
-    lines = [Text(f"  {question}", style="bold")]
+) -> list[str]:
+    lines = [f"  {_ansi_bold(question)}", ""]
     for idx, option in enumerate(options):
-        marker = "●" if idx == cursor else "○"
-        style = "green" if idx == cursor else "dim"
+        marker = _ansi_green("●") if idx == cursor else _ansi_dim("○")
         box = "[x]" if idx in checked else "[ ]"
-        lines.append(Text.assemble("  ", (marker, style), f" {box} {idx + 1}. {option}"))
-    lines.append(Text("\n  Use ↑/↓ to move, Space to toggle, Enter to confirm.", style="dim"))
-    lines.append(Text("  Type a number to toggle it. Press a for all, n for none.", style="dim"))
-    return Group(*lines)
+        lines.append(f"  {marker} {box} {idx + 1}. {option}")
+    lines.append("")
+    lines.append(_ansi_dim("  Use ↑/↓ to move, Space to toggle, Enter to confirm."))
+    lines.append(_ansi_dim("  Type a number to toggle it. Press a for all, n for none."))
+    return lines
+
+
+def _draw_menu(lines: Sequence[str], previous_line_count: int) -> int:
+    if previous_line_count:
+        sys.stdout.write(f"\033[{previous_line_count}F")
+    for line in lines:
+        sys.stdout.write(f"\033[2K{line}\n")
+    sys.stdout.flush()
+    return len(lines)
+
+
+def _ansi_bold(text: str) -> str:
+    return f"\033[1m{text}\033[0m"
+
+
+def _ansi_dim(text: str) -> str:
+    return f"\033[2m{text}\033[0m"
+
+
+def _ansi_green(text: str) -> str:
+    return f"\033[32m{text}\033[0m"
 
 
 def _parse_menu_choice(choice: str, option_count: int, *, default: int) -> int:
@@ -315,6 +326,17 @@ def _raw_terminal():
         yield
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, original)
+
+
+@contextmanager
+def _hidden_cursor():
+    sys.stdout.write("\033[?25l")
+    sys.stdout.flush()
+    try:
+        yield
+    finally:
+        sys.stdout.write("\033[?25h")
+        sys.stdout.flush()
 
 
 def _print_detected_agents(results) -> None:
