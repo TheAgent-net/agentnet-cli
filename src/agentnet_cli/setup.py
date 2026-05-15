@@ -219,9 +219,9 @@ def _multi_lines(
 
 def _draw_menu(lines: Sequence[str], previous_line_count: int) -> int:
     if previous_line_count:
-        sys.stdout.write(f"\033[{previous_line_count}F")
+        sys.stdout.write(f"\033[{previous_line_count}F\r")
     for line in lines:
-        sys.stdout.write(f"\033[2K{line}\n")
+        sys.stdout.write(f"\r\033[2K{line}\r\n")
     sys.stdout.flush()
     return len(lines)
 

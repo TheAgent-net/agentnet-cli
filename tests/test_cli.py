@@ -230,6 +230,18 @@ def test_setup_can_skip_agent_configuration(fake_home):
     connect.assert_not_called()
 
 
+def test_setup_menu_drawer_resets_columns(monkeypatch):
+    import io
+    from agentnet_cli import setup
+
+    output = io.StringIO()
+    monkeypatch.setattr(setup.sys, "stdout", output)
+
+    assert setup._draw_menu(["one", "two"], previous_line_count=2) == 2
+
+    assert output.getvalue() == "\033[2F\r\r\033[2Kone\r\n\r\033[2Ktwo\r\n"
+
+
 def test_hint_emitted_when_claudecode_set(fake_home, monkeypatch):
     monkeypatch.setenv("CLAUDECODE", "1")
     result = runner.invoke(app, ["detect"])
