@@ -116,10 +116,22 @@ def register(
         None, "--url", help="Platform URL (default: https://app.agentnet.market)",
     ),
 ) -> None:
-    """Register with the Agent-net marketplace."""
+    """Sign in through the browser and register a CLI identity."""
     from .register import register_command
 
     register_command(platform_url=url)
+
+
+@app.command()
+def setup(
+    url: Optional[str] = typer.Option(
+        None, "--url", help="Platform URL (default: https://app.agentnet.market)",
+    ),
+) -> None:
+    """Sign in and choose which detected agents to configure."""
+    from .setup import setup_command
+
+    setup_command(platform_url=url)
 
 
 @app.command()

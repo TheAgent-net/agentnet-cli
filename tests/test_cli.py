@@ -1,5 +1,6 @@
 from unittest.mock import patch
 from typer.testing import CliRunner
+from agentnet_cli.agents.base import DetectionResult
 from agentnet_cli.main import app
 
 runner = CliRunner()
@@ -65,7 +66,7 @@ def test_connect_no_agent_specified(fake_home):
 
 def test_connect_shows_usage_hint(fake_home):
     result = runner.invoke(app, ["connect"])
-    assert "agentnet connect" in result.stdout.lower() or "register" in result.stdout.lower()
+    assert "agentnet connect" in result.stdout.lower() or "setup" in result.stdout.lower()
 
 
 def test_set_path_command(fake_home):
@@ -113,7 +114,7 @@ def test_clear_path_nonexistent(fake_home):
 def test_version_flag(fake_home):
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.stdout
+    assert "0.2.0" in result.stdout
 
 
 def test_disconnect_no_agent_specified(fake_home):
@@ -162,6 +163,71 @@ def test_connect_not_registered(fake_home):
     """Connect without prior registration — shows 'Not registered' error."""
     result = runner.invoke(app, ["connect", "claude"])
     assert result.exit_code != 0 or "not registered" in result.stdout.lower()
+
+
+def test_setup_registers_when_missing_config(fake_home):
+    with patch("agentnet_cli.setup.register_command") as register, \
+         patch("agentnet_cli.setup.detect_all", return_value=[]), \
+         patch("agentnet_cli.setup.connect_command") as connect:
+        result = runner.invoke(app, ["setup", "--url", "http://localhost:8006"])
+
+    assert result.exit_code == 0
+    register.assert_called_once()
+    assert register.call_args.kwargs["platform_url"] == "http://localhost:8006"
+    assert register.call_args.kwargs["auto_visibility"] == "private"
+    assert register.call_args.kwargs["auto_agent_name"]
+    connect.assert_not_called()
+
+
+def test_setup_connects_all_detected_agents_by_default(fake_home):
+    from agentnet_cli.config import save_config
+
+    save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
+    detections = [
+        DetectionResult(agent_name="claude", detected=True),
+        DetectionResult(agent_name="cursor", detected=False),
+    ]
+
+    with patch("agentnet_cli.setup.detect_all", return_value=detections), \
+         patch("agentnet_cli.setup.connect_command") as connect:
+        result = runner.invoke(app, ["setup"])
+
+    assert result.exit_code == 0
+    assert "Claude" in result.stdout
+    assert "will configure" in result.stdout
+    connect.assert_called_once_with(connect_all=True)
+
+
+def test_setup_can_select_individual_detected_agent(fake_home):
+    from agentnet_cli.config import save_config
+
+    save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
+    detections = [
+        DetectionResult(agent_name="claude", detected=True),
+        DetectionResult(agent_name="cursor", detected=True),
+    ]
+
+    with patch("agentnet_cli.setup.detect_all", return_value=detections), \
+         patch("agentnet_cli.setup.connect_command") as connect:
+        result = runner.invoke(app, ["setup"], input="2\n1\n")
+
+    assert result.exit_code == 0
+    connect.assert_called_once_with(agent_name="claude")
+
+
+def test_setup_can_skip_agent_configuration(fake_home):
+    from agentnet_cli.config import save_config
+
+    save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
+    detections = [DetectionResult(agent_name="claude", detected=True)]
+
+    with patch("agentnet_cli.setup.detect_all", return_value=detections), \
+         patch("agentnet_cli.setup.connect_command") as connect:
+        result = runner.invoke(app, ["setup"], input="3\n")
+
+    assert result.exit_code == 0
+    assert "No agents configured" in result.stdout
+    connect.assert_not_called()
 
 
 def test_hint_emitted_when_claudecode_set(fake_home, monkeypatch):

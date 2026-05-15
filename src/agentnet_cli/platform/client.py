@@ -21,7 +21,7 @@ class PlatformClient:
         self,
         *,
         base_url: str,
-        api_token: str,
+        api_token: str = "",
         http_client: httpx.Client | None = None,
     ) -> None:
         self._base = base_url.rstrip("/")
@@ -75,6 +75,40 @@ class PlatformClient:
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         resp = self._http.post(f"{self._base}{path}", headers=self._headers(), json=body)
         return self._handle_response(resp)
+
+    def _public_headers(self) -> dict[str, str]:
+        from .. import __version__  # noqa: PLC0415
+
+        return {
+            "Content-Type": "application/json",
+            "User-Agent": f"agentnet-cli/{__version__}",
+        }
+
+    def _public_post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        resp = self._http.post(
+            f"{self._base}{path}",
+            headers=self._public_headers(),
+            json=body or {},
+        )
+        return self._handle_response(resp)
+
+    def _public_get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        resp = self._http.get(
+            f"{self._base}{path}",
+            headers=self._public_headers(),
+            params=params,
+        )
+        return self._handle_response(resp)
+
+    def cli_login_start(self) -> dict[str, Any]:
+        return self._public_post("/auth/cli/login/start")
+
+    def cli_login_poll(self, *, login_id: str, poll_secret: str) -> dict[str, Any]:
+        _validate_path_segment(login_id)
+        return self._public_get(
+            f"/auth/cli/login/{login_id}",
+            {"poll_secret": poll_secret},
+        )
 
     def discover(self, *, query: str, category: str | None = None, max_results: int = 5, max_price: int | None = None) -> dict[str, Any]:
         params: dict[str, Any] = {"q": query, "limit": max_results}

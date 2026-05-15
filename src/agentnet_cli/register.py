@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import getpass
 import os
+import socket
+import time
+import webbrowser
 
 import typer
 from rich.console import Console
@@ -12,9 +16,15 @@ from .platform.client import PlatformClient
 console = Console()
 
 DEFAULT_PLATFORM_URL = "https://app.agentnet.market"
+DEFAULT_LOGIN_TIMEOUT_SECONDS = 10 * 60
 
 
-def register_command(platform_url: str | None = None) -> None:
+def register_command(
+    platform_url: str | None = None,
+    *,
+    auto_agent_name: str | None = None,
+    auto_visibility: str = "private",
+) -> None:
     existing = load_config()
     if existing and existing.get("api_token"):
         console.print(f"\n  [green]Already registered[/green] on {existing.get('platform_url')}")
@@ -23,17 +33,10 @@ def register_command(platform_url: str | None = None) -> None:
 
     url = platform_url or os.environ.get("AGENTNET_URL") or DEFAULT_PLATFORM_URL
 
-    console.print()
-    api_token = typer.prompt("  API token", hide_input=True)
-
+    client = PlatformClient(base_url=url)
+    info = _browser_login(client)
+    api_token = info["api_token"]
     client = PlatformClient(base_url=url, api_token=api_token)
-
-    console.print("  [dim]Verifying token...[/dim]")
-    try:
-        info = client.token_info()
-    except Exception as exc:
-        console.print(f"  [red]✗[/red] Failed to verify token: {exc}\n")
-        raise typer.Exit(1) from exc
 
     org_id = info["org_id"]
     org_name = info.get("org_name") or org_id
@@ -47,6 +50,13 @@ def register_command(platform_url: str | None = None) -> None:
         agent_id = info["agent_id"]
         console.print(
             f"  [green]✓[/green] Token bound to agent: [bold]{info.get('agent_name')}[/bold] ({agent_id})"
+        )
+    elif auto_agent_name:
+        console.print("\n  Creating a private AgentNet identity for this CLI.\n")
+        agent_id, agent_api_key = _create_agent(
+            client,
+            name=auto_agent_name,
+            visibility=auto_visibility,
         )
     elif agents:
         console.print(f"\n  Found {len(agents)} agent(s) in this org:\n")
@@ -101,15 +111,82 @@ def register_command(platform_url: str | None = None) -> None:
     console.print()
 
 
-def _create_agent(client: PlatformClient) -> tuple[str, str | None]:
-    name = typer.prompt("  Agent name")
+def default_agent_name() -> str:
+    user = getpass.getuser() or "local"
+    host = socket.gethostname() or "machine"
+    return f"{user}@{host} AgentNet CLI"[:200]
 
+
+def _browser_login(client: PlatformClient) -> dict:
     console.print()
-    console.print("  [bold]Visibility:[/bold]")
-    console.print("    [cyan]public[/cyan]  — listed on marketplace, A2A endpoint exposed")
-    console.print("    [cyan]private[/cyan] — not listed, can only consume services")
+    console.print("  [bold]Sign in to AgentNet[/bold]")
+    console.print("  [dim]A browser window will open so AgentNet can authorize this CLI.[/dim]")
     console.print()
-    visibility = typer.prompt("  Public or private?", default="private", type=str).lower()
+
+    try:
+        login = client.cli_login_start()
+    except Exception as exc:
+        console.print(f"  [red]✗[/red] Failed to start browser login: {exc}\n")
+        raise typer.Exit(1) from exc
+
+    verification_url = login["verification_url"]
+    login_id = login["login_id"]
+    poll_secret = login["poll_secret"]
+    poll_interval = max(1, int(login.get("poll_interval") or 2))
+    expires_in = int(login.get("expires_in") or DEFAULT_LOGIN_TIMEOUT_SECONDS)
+
+    opened = webbrowser.open(verification_url)
+    if opened:
+        console.print("  [green]✓[/green] Opened browser for sign in.")
+    else:
+        console.print("  [yellow]![/yellow] Could not open a browser automatically.")
+    console.print(f"  Visit: [cyan]{verification_url}[/cyan]")
+    console.print("  [dim]Waiting for browser authorization...[/dim]")
+
+    deadline = time.monotonic() + expires_in
+    while time.monotonic() < deadline:
+        try:
+            result = client.cli_login_poll(login_id=login_id, poll_secret=poll_secret)
+        except Exception as exc:
+            console.print(f"  [red]✗[/red] Failed while waiting for login: {exc}\n")
+            raise typer.Exit(1) from exc
+
+        status = result.get("status")
+        if status == "authorized":
+            if not result.get("api_token"):
+                console.print("  [red]✗[/red] Platform did not return CLI credentials.\n")
+                raise typer.Exit(1)
+            console.print("  [green]✓[/green] Browser authorization complete.")
+            return result
+        if status == "expired":
+            console.print(f"  [red]✗[/red] {result.get('error') or 'Login expired.'}\n")
+            raise typer.Exit(1)
+        if status not in (None, "pending"):
+            console.print(f"  [red]✗[/red] Login failed: {result.get('error') or status}\n")
+            raise typer.Exit(1)
+
+        time.sleep(poll_interval)
+
+    console.print("  [red]✗[/red] Timed out waiting for browser authorization.\n")
+    raise typer.Exit(1)
+
+
+def _create_agent(
+    client: PlatformClient,
+    *,
+    name: str | None = None,
+    visibility: str | None = None,
+) -> tuple[str, str | None]:
+    if name is None:
+        name = typer.prompt("  Agent name")
+
+    if visibility is None:
+        console.print()
+        console.print("  [bold]Visibility:[/bold]")
+        console.print("    [cyan]public[/cyan]  — listed on marketplace, A2A endpoint exposed")
+        console.print("    [cyan]private[/cyan] — not listed, can only consume services")
+        console.print()
+        visibility = typer.prompt("  Public or private?", default="private", type=str).lower()
     if visibility not in ("public", "private"):
         visibility = "private"
 

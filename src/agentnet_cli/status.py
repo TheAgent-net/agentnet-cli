@@ -14,7 +14,7 @@ def status_command() -> None:
     config = load_config()
     if not config:
         console.print()
-        console.print("  [yellow]Not registered.[/yellow] Run [bold]agentnet register[/bold] to get started.")
+        console.print("  [yellow]Not registered.[/yellow] Run [bold]agentnet setup[/bold] to get started.")
         console.print()
         return
 

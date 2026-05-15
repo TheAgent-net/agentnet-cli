@@ -15,7 +15,7 @@ def connect_command(agent_name: str | None = None, connect_all: bool = False) ->
     config = load_config()
     if not config or not config.get("api_token"):
         console.print()
-        console.print("  [red]Not registered.[/red] Run [bold]agentnet register[/bold] first.")
+        console.print("  [red]Not registered.[/red] Run [bold]agentnet setup[/bold] first.")
         console.print()
         raise SystemExit(1)
 

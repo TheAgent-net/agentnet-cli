@@ -14,7 +14,7 @@ def get_client() -> PlatformClient:
     if not token and config:
         token = config.get("api_token", "")
     if not token:
-        die("Not authenticated. Run 'agentnet register' or set AGENTNET_TOKEN.")
+        die("Not authenticated. Run 'agentnet setup' or set AGENTNET_TOKEN.")
     platform_url = os.environ.get("AGENTNET_PLATFORM_URL", "")
     if not platform_url and config:
         platform_url = config.get("platform_url", "https://app.agentnet.market")
@@ -26,7 +26,7 @@ def get_client() -> PlatformClient:
 def get_agent_id() -> str:
     config = load_config()
     if not config or not config.get("agent_id"):
-        die("No agent registered. Run 'agentnet register' first.")
+        die("No agent registered. Run 'agentnet setup' first.")
     return config["agent_id"]
 
 

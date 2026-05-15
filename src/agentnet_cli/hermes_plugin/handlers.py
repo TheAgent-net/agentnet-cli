@@ -7,7 +7,7 @@ from typing import Any
 from agentnet_cli.config import load_config
 from agentnet_cli.mcp.tools import ToolHandlers
 
-_NO_TOKEN_ERROR = json.dumps({"error": "Not registered. Run 'agentnet register' first."})
+_NO_TOKEN_ERROR = json.dumps({"error": "Not registered. Run 'agentnet setup' first."})
 
 
 def _get_handlers() -> ToolHandlers | None:

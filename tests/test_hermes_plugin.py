@@ -37,7 +37,7 @@ def test_handler_no_token(monkeypatch):
     monkeypatch.setattr("agentnet_cli.hermes_plugin.handlers.load_config", lambda: None)
     result = json.loads(handlers.agentnet_discover({"query": "test"}))
     assert "error" in result
-    assert "register" in result["error"].lower()
+    assert "setup" in result["error"].lower()
 
 
 def test_handler_returns_json(monkeypatch):
