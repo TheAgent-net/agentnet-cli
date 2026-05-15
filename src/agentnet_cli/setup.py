@@ -135,6 +135,7 @@ def _multi_select_menu(
 
     cursor = 0
     checked = set(default_selected)
+    explicit_none = False
     with _raw_terminal():
         with _hidden_cursor():
             rendered_lines = 0
@@ -150,18 +151,27 @@ def _multi_select_menu(
                         checked.remove(cursor)
                     else:
                         checked.add(cursor)
+                    explicit_none = False
                 elif key == "enter":
-                    return [idx for idx in range(len(options)) if idx in checked]
+                    return _finalize_multi_selection(
+                        checked,
+                        option_count=len(options),
+                        cursor=cursor,
+                        explicit_none=explicit_none,
+                    )
                 elif key == "a":
                     checked = set(range(len(options)))
+                    explicit_none = False
                 elif key == "n":
                     checked = set()
+                    explicit_none = True
                 elif key.isdigit() and 1 <= int(key) <= len(options):
                     idx = int(key) - 1
                     if idx in checked:
                         checked.remove(idx)
                     else:
                         checked.add(idx)
+                    explicit_none = False
                 elif key == "ctrl_c":
                     raise KeyboardInterrupt
 
@@ -184,7 +194,7 @@ def _print_multi_snapshot(
     console.print(f"  [bold]{question}[/bold]")
     console.print("  [dim]Enter numbers like 1,3, type all to select all, or press Enter to skip.[/dim]")
     for idx, option in enumerate(options):
-        marker = "[green]●[/green]" if idx == cursor else "[dim]○[/dim]"
+        marker = "[bold]>[/bold]" if idx == cursor else " "
         box = "[x]" if idx in checked else "[ ]"
         console.print(f"  {marker} {box} {idx + 1}. {option}")
 
@@ -208,7 +218,7 @@ def _multi_lines(
 ) -> list[str]:
     lines = [f"  {_ansi_bold(question)}", ""]
     for idx, option in enumerate(options):
-        marker = _ansi_green("●") if idx == cursor else _ansi_dim("○")
+        marker = ">" if idx == cursor else " "
         box = "[x]" if idx in checked else "[ ]"
         lines.append(f"  {marker} {box} {idx + 1}. {option}")
     lines.append("")
@@ -275,6 +285,20 @@ def _parse_multi_choice(choice: str, option_count: int, *, default_selected: set
             selected.append(zero_based)
 
     return selected or [idx for idx in range(option_count) if idx in default_selected]
+
+
+def _finalize_multi_selection(
+    checked: set[int],
+    *,
+    option_count: int,
+    cursor: int,
+    explicit_none: bool,
+) -> list[int]:
+    if checked:
+        return [idx for idx in range(option_count) if idx in checked]
+    if explicit_none:
+        return []
+    return [cursor]
 
 
 def _use_terminal_menu() -> bool:

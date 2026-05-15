@@ -1,4 +1,6 @@
 from unittest.mock import patch
+from contextlib import nullcontext
+
 from typer.testing import CliRunner
 from agentnet_cli.agents.base import DetectionResult
 from agentnet_cli.main import app
@@ -258,6 +260,57 @@ def test_setup_menu_drawer_resets_columns(monkeypatch):
     assert setup._draw_menu(["one", "two"], previous_line_count=2) == 2
 
     assert output.getvalue() == "\033[2F\r\r\033[2Kone\r\n\r\033[2Ktwo\r\n"
+
+
+def test_setup_tui_enter_selects_highlighted_agent(monkeypatch):
+    from agentnet_cli import setup
+
+    monkeypatch.setattr(setup, "_use_terminal_menu", lambda: True)
+    monkeypatch.setattr(setup, "_raw_terminal", nullcontext)
+    monkeypatch.setattr(setup, "_hidden_cursor", nullcontext)
+    monkeypatch.setattr(setup, "_draw_menu", lambda lines, previous_line_count: len(lines))
+    keys = iter(["enter"])
+    monkeypatch.setattr(setup, "_read_key", lambda: next(keys))
+
+    assert setup._multi_select_menu(
+        "Choose",
+        ["GitHub Copilot", "Codex", "Hermes"],
+        default_selected=range(0),
+    ) == [0]
+
+
+def test_setup_tui_can_explicitly_select_none(monkeypatch):
+    from agentnet_cli import setup
+
+    monkeypatch.setattr(setup, "_use_terminal_menu", lambda: True)
+    monkeypatch.setattr(setup, "_raw_terminal", nullcontext)
+    monkeypatch.setattr(setup, "_hidden_cursor", nullcontext)
+    monkeypatch.setattr(setup, "_draw_menu", lambda lines, previous_line_count: len(lines))
+    keys = iter(["n", "enter"])
+    monkeypatch.setattr(setup, "_read_key", lambda: next(keys))
+
+    assert setup._multi_select_menu(
+        "Choose",
+        ["GitHub Copilot", "Codex", "Hermes"],
+        default_selected=range(0),
+    ) == []
+
+
+def test_setup_tui_space_toggles_multiple_agents(monkeypatch):
+    from agentnet_cli import setup
+
+    monkeypatch.setattr(setup, "_use_terminal_menu", lambda: True)
+    monkeypatch.setattr(setup, "_raw_terminal", nullcontext)
+    monkeypatch.setattr(setup, "_hidden_cursor", nullcontext)
+    monkeypatch.setattr(setup, "_draw_menu", lambda lines, previous_line_count: len(lines))
+    keys = iter(["space", "down", "space", "enter"])
+    monkeypatch.setattr(setup, "_read_key", lambda: next(keys))
+
+    assert setup._multi_select_menu(
+        "Choose",
+        ["GitHub Copilot", "Codex", "Hermes"],
+        default_selected=range(0),
+    ) == [0, 1]
 
 
 def test_hint_emitted_when_claudecode_set(fake_home, monkeypatch):
