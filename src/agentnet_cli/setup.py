@@ -84,7 +84,7 @@ def _select_targets(targets: list[str]) -> tuple[list[str], bool]:
     selected_indexes = _multi_select_menu(
         "Which agents should AgentNet configure?",
         labels,
-        default_selected=range(len(targets)),
+        default_selected=range(0),
     )
     return [targets[idx] for idx in selected_indexes], False
 
@@ -127,7 +127,7 @@ def _multi_select_menu(
     if not _use_terminal_menu():
         _print_multi_snapshot(question, options, set(default_selected), 0)
         try:
-            choice = typer.prompt(f"  Select agents [1-{len(options)}]", default="all").strip().lower()
+            choice = typer.prompt(f"  Select agents [1-{len(options)}]", default="none").strip().lower()
         except click.Abort:
             console.print()
             return [idx for idx in default_selected]
@@ -182,7 +182,7 @@ def _print_multi_snapshot(
 ) -> None:
     console.print()
     console.print(f"  [bold]{question}[/bold]")
-    console.print("  [dim]Enter numbers like 1,3, press Enter for all, or type none to skip.[/dim]")
+    console.print("  [dim]Enter numbers like 1,3, type all to select all, or press Enter to skip.[/dim]")
     for idx, option in enumerate(options):
         marker = "[green]●[/green]" if idx == cursor else "[dim]○[/dim]"
         box = "[x]" if idx in checked else "[ ]"
@@ -253,9 +253,9 @@ def _parse_menu_choice(choice: str, option_count: int, *, default: int) -> int:
 
 
 def _parse_multi_choice(choice: str, option_count: int, *, default_selected: set[int]) -> list[int]:
-    if choice in ("", "all", "a"):
+    if choice in ("all", "a"):
         return list(range(option_count))
-    if choice in ("none", "no", "n", "skip"):
+    if choice in ("", "none", "no", "n", "skip"):
         return []
 
     selected: list[int] = []

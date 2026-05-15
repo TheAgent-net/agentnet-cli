@@ -215,6 +215,24 @@ def test_setup_can_select_individual_detected_agent(fake_home):
     connect.assert_called_once_with(agent_name="claude")
 
 
+def test_setup_individual_mode_defaults_to_no_agents(fake_home):
+    from agentnet_cli.config import save_config
+
+    save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
+    detections = [
+        DetectionResult(agent_name="claude", detected=True),
+        DetectionResult(agent_name="cursor", detected=True),
+    ]
+
+    with patch("agentnet_cli.setup.detect_all", return_value=detections), \
+         patch("agentnet_cli.setup.connect_command") as connect:
+        result = runner.invoke(app, ["setup"], input="2\n\n")
+
+    assert result.exit_code == 0
+    assert "No agents configured" in result.stdout
+    connect.assert_not_called()
+
+
 def test_setup_can_skip_agent_configuration(fake_home):
     from agentnet_cli.config import save_config
 
