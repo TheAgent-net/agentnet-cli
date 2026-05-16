@@ -136,7 +136,7 @@ class TestToolDefinitions:
             assert "description" in defn, f"Missing 'description' in {defn}"
             assert "inputSchema" in defn, f"Missing 'inputSchema' in {defn}"
 
-    def test_all_eight_tools_present(self):
+    def test_all_tools_present(self):
         names = {d["name"] for d in TOOL_DEFINITIONS}
         expected = {
             "agentnet_discover",
@@ -147,6 +147,9 @@ class TestToolDefinitions:
             "agentnet_settle_session",
             "agentnet_wallet",
             "agentnet_wallet_topup",
+            "agentnet_link_auth",
+            "agentnet_link_status",
+            "agentnet_pay",
         }
         assert names == expected
 
@@ -186,7 +189,7 @@ class TestToolsList:
         responses = _run_server([req])
         assert len(responses) == 1
         tools = responses[0]["result"]["tools"]
-        assert len(tools) == 8
+        assert len(tools) == 11
         names = {t["name"] for t in tools}
         assert "agentnet_discover" in names
         assert "agentnet_wallet" in names
@@ -416,7 +419,7 @@ class TestMultipleRequests:
         responses = _run_server(lines)
         assert len(responses) == 3
         assert "protocolVersion" in responses[0]["result"]
-        assert len(responses[1]["result"]["tools"]) == 8
+        assert len(responses[1]["result"]["tools"]) == 11
         content_text = json.loads(responses[2]["result"]["content"][0]["text"])
         assert content_text == {"balance_minor": 1000}
 

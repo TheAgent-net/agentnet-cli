@@ -3,6 +3,10 @@
     "agentnet": {
       "command": "agentnet",
       "args": ["mcp-serve"]
+    },
+    "link": {
+      "command": "npx",
+      "args": ["@stripe/link-cli", "--mcp"]
     }
   }
 }
