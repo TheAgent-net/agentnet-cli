@@ -261,3 +261,9 @@ app.command(name="agent")(_agent_fn)
 app.command(name="hire")(_hire_fn)
 app.add_typer(wallet_app, name="wallet")
 app.add_typer(session_app, name="session")
+
+from .commands.link import link_app  # noqa: E402
+from .commands.pay import pay as _pay_fn  # noqa: E402
+
+app.add_typer(link_app, name="link")
+app.command(name="pay")(_pay_fn)
