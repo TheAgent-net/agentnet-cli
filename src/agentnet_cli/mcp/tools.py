@@ -4,6 +4,9 @@ from typing import Any
 
 import httpx
 
+from ..payments.link import LinkClient
+from ..payments.mpp_client import MppPaymentClient
+from ..payments.spend_controls import SpendController
 from ..platform.client import PlatformClient
 
 
@@ -65,3 +68,44 @@ class ToolHandlers:
         if amount <= 0 or amount > 10000:
             raise ValueError("amount must be between 0 (exclusive) and 10000")
         return self._client.wallet_topup(agent_id=self._agent_id, amount=amount)
+
+    def link_auth(self, *, client_name: str = "agentnet") -> dict[str, Any]:
+        return LinkClient().auth_login(client_name=client_name)
+
+    def link_status(self) -> dict[str, Any]:
+        return LinkClient().auth_status()
+
+    def pay(
+        self,
+        *,
+        url: str,
+        method: str = "GET",
+        data: str | None = None,
+        max_amount: float = 25.0,
+    ) -> dict[str, Any]:
+        mpp = MppPaymentClient()
+        ctrl = SpendController(single_tx_limit_usd=max_amount)
+
+        probe_result = mpp.probe(url, method=method, data=data)
+
+        if not probe_result["requires_payment"]:
+            return probe_result
+
+        body = probe_result.get("body", {})
+        amount_minor = body.get("amount_minor", 0) if isinstance(body, dict) else 0
+        amount_usd = amount_minor / 100.0
+
+        if not ctrl.check_allowed(amount_usd=amount_usd):
+            raise ValueError(
+                f"Payment of ${amount_usd:.2f} exceeds spend limit (max ${max_amount:.2f})"
+            )
+
+        protocol = mpp.detect_protocol(probe_result.get("headers", {}))
+
+        if protocol == "mpp":
+            link = LinkClient()
+            result = link.mpp_pay(url=url, spend_request_id="auto")
+            ctrl.record_spend(amount_usd=amount_usd, receipt_ref="mpp_pay")
+            return result
+
+        raise ValueError(f"Unsupported payment protocol: {protocol}")

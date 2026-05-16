@@ -106,6 +106,40 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["amount"],
         },
     },
+    {
+        "name": "agentnet_link_auth",
+        "description": "Connect a Stripe Link wallet for payments. Returns a verification URL the user must open to authenticate. Only needs to be done once.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "client_name": {"type": "string", "description": "Agent name for Link", "default": "agentnet"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "agentnet_link_status",
+        "description": "Check if a Stripe Link wallet is connected and authenticated.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "agentnet_pay",
+        "description": "Pay any MPP or x402 enabled service on the internet. Probes the URL, detects payment protocol, handles 402 challenge and payment automatically. Enforces spend limits.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL of the service to pay"},
+                "method": {"type": "string", "description": "HTTP method", "default": "GET"},
+                "data": {"type": "string", "description": "Request body for POST"},
+                "max_amount": {"type": "number", "description": "Max USD to spend on this request", "default": 25.0},
+            },
+            "required": ["url"],
+        },
+    },
 ]
 
 
@@ -157,6 +191,9 @@ def serve() -> None:
         "agentnet_settle_session": lambda p: handlers.settle_session(**p),
         "agentnet_wallet": lambda p: handlers.wallet(**p),
         "agentnet_wallet_topup": lambda p: handlers.wallet_topup(**p),
+        "agentnet_link_auth": lambda p: handlers.link_auth(**p),
+        "agentnet_link_status": lambda p: handlers.link_status(**p),
+        "agentnet_pay": lambda p: handlers.pay(**p),
     }
 
     while True:
