@@ -8,14 +8,7 @@ import typer
 from ..marketplace import die, output
 from ..payments.link import LinkClient, LinkError
 from ..payments.mpp_client import MppPaymentClient
-from ..payments.spend_controls import SpendController
-
-
-def _build_context(amount_usd: float, agent_name: str, description: str, url: str) -> str:
-    ctx = f"Payment of ${amount_usd:.2f} to {agent_name} ({description}) via AgentNet marketplace at {url}"
-    if len(ctx) < 100:
-        ctx = ctx + " " + description[:100]
-    return ctx[:500]
+from ..payments.mpp_flow import PaymentFlowError, execute_mpp_payment
 
 
 def pay(
@@ -28,7 +21,6 @@ def pay(
 ) -> None:
     """Pay any MPP/x402-enabled service. Auto-detects protocol and handles payment."""
     mpp = MppPaymentClient()
-    ctrl = SpendController(single_tx_limit_usd=max_amount)
 
     probe_headers: dict[str, str] = {}
     for h in header or []:
@@ -45,79 +37,25 @@ def pay(
         output(probe_result)
         return
 
-    body = probe_result.get("body", {})
-    amount_minor = body.get("amount_minor", 0) if isinstance(body, dict) else 0
-    amount_usd = amount_minor / 100.0
-
-    if not ctrl.check_allowed(amount_usd=amount_usd):
-        die(f"Payment of ${amount_usd:.2f} exceeds spend limit (max ${max_amount:.2f})")
-
-    protocol = mpp.detect_protocol(probe_result.get("headers", {}))
-
-    if protocol == "x402":
-        die("x402 crypto payments not yet supported via CLI. Use an x402-compatible wallet.")
-
-    if protocol != "mpp":
-        die(f"Unknown payment protocol at {url}")
-
-    spend_request_id = None
-    try:
-        link = LinkClient()
-
-        methods_resp = link.list_payment_methods()
-        pm_list = methods_resp if isinstance(methods_resp, list) else methods_resp.get("data", methods_resp.get("payment_methods", []))
-        if not pm_list:
-            die("No Stripe Link payment methods found. Run 'agentnet link auth' first.")
-        payment_method_id = pm_list[0].get("id", pm_list[0].get("payment_method_id", ""))
-
-        www_auth = probe_result.get("headers", {}).get("www-authenticate", "")
+    www_auth = probe_result.get("headers", {}).get("www-authenticate", "")
+    if www_auth:
         try:
-            decoded = link.mpp_decode(www_auth)
+            LinkClient().mpp_decode(www_auth)
         except LinkError as e:
             print(f"Warning: Failed to decode payment challenge: {e}", file=sys.stderr)
-            decoded = {}
 
-        agent_name = body.get("agent_name", "Unknown") if isinstance(body, dict) else "Unknown"
-        description = body.get("description", "") if isinstance(body, dict) else ""
-        context = _build_context(amount_usd, agent_name, description, url)
+    header_list = [f"{k}: {v}" for k, v in probe_headers.items()] or None
 
-        sr = link.spend_request_create(
-            amount_cents=amount_minor,
-            merchant_name=agent_name,
-            merchant_url=url,
-            context=context,
-            payment_method_id=payment_method_id,
-            credential_type="shared_payment_token",
-        )
-        spend_request_id = sr.get("id", sr.get("spend_request_id", ""))
-
-        link.spend_request_approve(spend_request_id)
-
-        try:
-            link.spend_request_retrieve(spend_request_id, interval=5, max_attempts=60)
-        except LinkError as e:
-            try:
-                link.spend_request_cancel(spend_request_id)
-            except LinkError:
-                pass
-            die(f"Payment approval timed out: {e}")
-
-        header_list = [f"{k}: {v}" for k, v in probe_headers.items()]
-        result = link.mpp_pay(
+    try:
+        result = execute_mpp_payment(
+            probe_result=probe_result,
             url=url,
-            spend_request_id=spend_request_id,
             method=method,
-            data=data or "{}",
-            headers=header_list or None,
+            data=data,
+            max_amount=max_amount,
+            headers=header_list,
+            via="marketplace",
         )
-
-        ctrl.record_spend(amount_usd=amount_usd, receipt_ref=result.get("receipt_ref", "mpp_pay"))
         output(result)
-
-    except LinkError as e:
-        if spend_request_id:
-            try:
-                LinkClient().spend_request_cancel(spend_request_id)
-            except LinkError:
-                pass
-        die(f"Link payment failed: {e}")
+    except PaymentFlowError as e:
+        die(str(e))

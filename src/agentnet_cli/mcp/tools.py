@@ -6,7 +6,7 @@ import httpx
 
 from ..payments.link import LinkClient
 from ..payments.mpp_client import MppPaymentClient
-from ..payments.spend_controls import SpendController
+from ..payments.mpp_flow import PaymentFlowError, execute_mpp_payment
 from ..platform.client import PlatformClient
 
 
@@ -83,75 +83,20 @@ class ToolHandlers:
         data: str | None = None,
         max_amount: float = 25.0,
     ) -> dict[str, Any]:
-        from ..payments.link import LinkError
-
         mpp = MppPaymentClient()
-        ctrl = SpendController(single_tx_limit_usd=max_amount)
-
         probe_result = mpp.probe(url, method=method, data=data)
 
         if not probe_result["requires_payment"]:
             return probe_result
 
-        body = probe_result.get("body", {})
-        amount_minor = body.get("amount_minor", 0) if isinstance(body, dict) else 0
-        amount_usd = amount_minor / 100.0
-
-        if not ctrl.check_allowed(amount_usd=amount_usd):
-            raise ValueError(
-                f"Payment of ${amount_usd:.2f} exceeds spend limit (max ${max_amount:.2f})"
-            )
-
-        protocol = mpp.detect_protocol(probe_result.get("headers", {}))
-
-        if protocol == "x402":
-            raise ValueError("x402 crypto payments not yet supported via MCP tool")
-
-        if protocol != "mpp":
-            raise ValueError(f"Unsupported payment protocol: {protocol}")
-
-        link = LinkClient()
-        spend_request_id = None
-
-        methods_resp = link.list_payment_methods()
-        pm_list = methods_resp if isinstance(methods_resp, list) else methods_resp.get("data", methods_resp.get("payment_methods", []))
-        if not pm_list:
-            raise ValueError("No Stripe Link payment methods found. Run link_auth first.")
-        payment_method_id = pm_list[0].get("id", pm_list[0].get("payment_method_id", ""))
-
-        agent_name = body.get("agent_name", "Unknown") if isinstance(body, dict) else "Unknown"
-        description = body.get("description", "") if isinstance(body, dict) else ""
-        context = f"Payment of ${amount_usd:.2f} to {agent_name} ({description}) via AgentNet MCP at {url}"
-        if len(context) < 100:
-            context = context + " " + description[:100]
-
-        sr = link.spend_request_create(
-            amount_cents=amount_minor,
-            merchant_name=agent_name,
-            merchant_url=url,
-            context=context[:500],
-            payment_method_id=payment_method_id,
-            credential_type="shared_payment_token",
-        )
-        spend_request_id = sr.get("id", sr.get("spend_request_id", ""))
-
-        link.spend_request_approve(spend_request_id)
-
         try:
-            link.spend_request_retrieve(spend_request_id, interval=5, max_attempts=60)
-        except LinkError:
-            try:
-                link.spend_request_cancel(spend_request_id)
-            except LinkError:
-                pass
-            raise ValueError("Payment approval timed out. Spend request cancelled.")
-
-        result = link.mpp_pay(
-            url=url,
-            spend_request_id=spend_request_id,
-            method=method,
-            data=data or "{}",
-        )
-
-        ctrl.record_spend(amount_usd=amount_usd, receipt_ref=result.get("receipt_ref", "mpp_pay"))
-        return result
+            return execute_mpp_payment(
+                probe_result=probe_result,
+                url=url,
+                method=method,
+                data=data,
+                max_amount=max_amount,
+                via="MCP",
+            )
+        except PaymentFlowError as e:
+            raise ValueError(str(e)) from e
