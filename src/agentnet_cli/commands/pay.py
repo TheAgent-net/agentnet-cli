@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Optional
 
 import typer
@@ -59,6 +60,7 @@ def pay(
     if protocol != "mpp":
         die(f"Unknown payment protocol at {url}")
 
+    spend_request_id = None
     try:
         link = LinkClient()
 
@@ -71,7 +73,8 @@ def pay(
         www_auth = probe_result.get("headers", {}).get("www-authenticate", "")
         try:
             decoded = link.mpp_decode(www_auth)
-        except LinkError:
+        except LinkError as e:
+            print(f"Warning: Failed to decode payment challenge: {e}", file=sys.stderr)
             decoded = {}
 
         agent_name = body.get("agent_name", "Unknown") if isinstance(body, dict) else "Unknown"
@@ -89,7 +92,15 @@ def pay(
         spend_request_id = sr.get("id", sr.get("spend_request_id", ""))
 
         link.spend_request_approve(spend_request_id)
-        link.spend_request_retrieve(spend_request_id, interval=5, max_attempts=60)
+
+        try:
+            link.spend_request_retrieve(spend_request_id, interval=5, max_attempts=60)
+        except LinkError as e:
+            try:
+                link.spend_request_cancel(spend_request_id)
+            except LinkError:
+                pass
+            die(f"Payment approval timed out: {e}")
 
         header_list = [f"{k}: {v}" for k, v in probe_headers.items()]
         result = link.mpp_pay(
@@ -104,4 +115,9 @@ def pay(
         output(result)
 
     except LinkError as e:
+        if spend_request_id:
+            try:
+                LinkClient().spend_request_cancel(spend_request_id)
+            except LinkError:
+                pass
         die(f"Link payment failed: {e}")

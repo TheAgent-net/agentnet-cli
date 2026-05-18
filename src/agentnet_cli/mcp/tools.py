@@ -83,6 +83,8 @@ class ToolHandlers:
         data: str | None = None,
         max_amount: float = 25.0,
     ) -> dict[str, Any]:
+        from ..payments.link import LinkError
+
         mpp = MppPaymentClient()
         ctrl = SpendController(single_tx_limit_usd=max_amount)
 
@@ -109,6 +111,7 @@ class ToolHandlers:
             raise ValueError(f"Unsupported payment protocol: {protocol}")
 
         link = LinkClient()
+        spend_request_id = None
 
         methods_resp = link.list_payment_methods()
         pm_list = methods_resp if isinstance(methods_resp, list) else methods_resp.get("data", methods_resp.get("payment_methods", []))
@@ -133,7 +136,15 @@ class ToolHandlers:
         spend_request_id = sr.get("id", sr.get("spend_request_id", ""))
 
         link.spend_request_approve(spend_request_id)
-        link.spend_request_retrieve(spend_request_id, interval=5, max_attempts=60)
+
+        try:
+            link.spend_request_retrieve(spend_request_id, interval=5, max_attempts=60)
+        except LinkError:
+            try:
+                link.spend_request_cancel(spend_request_id)
+            except LinkError:
+                pass
+            raise ValueError("Payment approval timed out. Spend request cancelled.")
 
         result = link.mpp_pay(
             url=url,

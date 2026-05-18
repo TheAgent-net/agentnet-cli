@@ -53,8 +53,8 @@ class MppPaymentClient:
     def detect_protocol(self, headers: dict[str, str]) -> str:
         lower_headers = {k.lower(): v for k, v in headers.items()}
         if "www-authenticate" in lower_headers:
-            auth = lower_headers["www-authenticate"]
-            if "payment" in auth.lower():
+            auth = lower_headers["www-authenticate"].strip()
+            if auth.lower().startswith("payment ") or auth.lower() == "payment":
                 return "mpp"
         if "payment-required" in lower_headers:
             return "x402"

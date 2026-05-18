@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -26,13 +28,34 @@ class SpendController:
         return True
 
     def record_spend(self, *, amount_usd: float, receipt_ref: str) -> None:
-        entries = self._load_today_entries()
-        entries.append({
-            "amount_usd": amount_usd,
-            "receipt_ref": receipt_ref,
-            "timestamp": time.time(),
-        })
-        self._save_entries(entries)
+        self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._log_path, "a+") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.seek(0)
+                raw = f.read()
+                try:
+                    data = json.loads(raw) if raw.strip() else {"entries": []}
+                except json.JSONDecodeError:
+                    print(
+                        f"WARNING: Corrupted spend log at {self._log_path}, resetting",
+                        file=sys.stderr,
+                    )
+                    data = {"entries": []}
+
+                cutoff = time.time() - 86400
+                entries = [e for e in data.get("entries", []) if e.get("timestamp", 0) > cutoff]
+                entries.append({
+                    "amount_usd": amount_usd,
+                    "receipt_ref": receipt_ref,
+                    "timestamp": time.time(),
+                })
+
+                f.seek(0)
+                f.truncate()
+                f.write(json.dumps({"entries": entries}, indent=2) + "\n")
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     def daily_spent_usd(self) -> float:
         return sum(e["amount_usd"] for e in self._load_today_entries())
@@ -42,7 +65,13 @@ class SpendController:
             return []
         try:
             data = json.loads(self._log_path.read_text())
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError:
+            print(
+                f"WARNING: Corrupted spend log at {self._log_path}",
+                file=sys.stderr,
+            )
+            return []
+        except OSError:
             return []
         cutoff = time.time() - 86400
         return [e for e in data.get("entries", []) if e.get("timestamp", 0) > cutoff]
