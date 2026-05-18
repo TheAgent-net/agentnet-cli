@@ -102,10 +102,45 @@ class ToolHandlers:
 
         protocol = mpp.detect_protocol(probe_result.get("headers", {}))
 
-        if protocol == "mpp":
-            link = LinkClient()
-            result = link.mpp_pay(url=url, spend_request_id="auto")
-            ctrl.record_spend(amount_usd=amount_usd, receipt_ref="mpp_pay")
-            return result
+        if protocol == "x402":
+            raise ValueError("x402 crypto payments not yet supported via MCP tool")
 
-        raise ValueError(f"Unsupported payment protocol: {protocol}")
+        if protocol != "mpp":
+            raise ValueError(f"Unsupported payment protocol: {protocol}")
+
+        link = LinkClient()
+
+        methods_resp = link.list_payment_methods()
+        pm_list = methods_resp if isinstance(methods_resp, list) else methods_resp.get("data", methods_resp.get("payment_methods", []))
+        if not pm_list:
+            raise ValueError("No Stripe Link payment methods found. Run link_auth first.")
+        payment_method_id = pm_list[0].get("id", pm_list[0].get("payment_method_id", ""))
+
+        agent_name = body.get("agent_name", "Unknown") if isinstance(body, dict) else "Unknown"
+        description = body.get("description", "") if isinstance(body, dict) else ""
+        context = f"Payment of ${amount_usd:.2f} to {agent_name} ({description}) via AgentNet MCP at {url}"
+        if len(context) < 100:
+            context = context + " " + description[:100]
+
+        sr = link.spend_request_create(
+            amount_cents=amount_minor,
+            merchant_name=agent_name,
+            merchant_url=url,
+            context=context[:500],
+            payment_method_id=payment_method_id,
+            credential_type="shared_payment_token",
+        )
+        spend_request_id = sr.get("id", sr.get("spend_request_id", ""))
+
+        link.spend_request_approve(spend_request_id)
+        link.spend_request_retrieve(spend_request_id, interval=5, max_attempts=60)
+
+        result = link.mpp_pay(
+            url=url,
+            spend_request_id=spend_request_id,
+            method=method,
+            data=data or "{}",
+        )
+
+        ctrl.record_spend(amount_usd=amount_usd, receipt_ref=result.get("receipt_ref", "mpp_pay"))
+        return result
