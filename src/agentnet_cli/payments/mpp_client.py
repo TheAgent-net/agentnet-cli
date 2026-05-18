@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from typing import Any
 
 import httpx
@@ -37,6 +39,15 @@ class MppPaymentClient:
         except Exception:
             result["body"] = resp.text
         result["requires_payment"] = resp.status_code == 402
+
+        lower_headers = {k.lower(): v for k, v in resp.headers.items()}
+        if "payment-response" in lower_headers:
+            try:
+                raw = lower_headers["payment-response"]
+                result["x402_receipt"] = json.loads(base64.b64decode(raw))
+            except Exception:
+                result["x402_receipt"] = None
+
         return result
 
     def detect_protocol(self, headers: dict[str, str]) -> str:
