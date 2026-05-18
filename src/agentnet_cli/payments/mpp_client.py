@@ -19,11 +19,13 @@ class MppPaymentClient:
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         req_headers = dict(headers or {})
+        if data and "content-type" not in {k.lower() for k in req_headers}:
+            req_headers["Content-Type"] = "application/json"
         with httpx.Client(timeout=30.0) as client:
             resp = client.request(
                 method,
                 url,
-                content=data,
+                content=data.encode() if data else None,
                 headers=req_headers,
             )
         result: dict[str, Any] = {
