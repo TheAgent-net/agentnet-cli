@@ -265,6 +265,7 @@ from .commands.agent import hire as _hire_fn  # noqa: E402
 from .commands.discover import agents as _agents_fn  # noqa: E402
 from .commands.discover import discover as _discover_fn  # noqa: E402
 from .commands.session import session_app  # noqa: E402
+from .commands.skills import skills_app  # noqa: E402
 from .commands.wallet import wallet_app  # noqa: E402
 
 app.command(name="discover")(_discover_fn)
@@ -273,3 +274,4 @@ app.command(name="agent")(_agent_fn)
 app.command(name="hire")(_hire_fn)
 app.add_typer(wallet_app, name="wallet")
 app.add_typer(session_app, name="session")
+app.add_typer(skills_app, name="skills")
