@@ -15,6 +15,7 @@ _HANDLER_MAP = {
     "agentnet_settle_session": handlers.agentnet_settle_session,
     "agentnet_wallet": handlers.agentnet_wallet,
     "agentnet_wallet_topup": handlers.agentnet_wallet_topup,
+    "agentnet_search_skills": handlers.agentnet_search_skills,
 }
 
 

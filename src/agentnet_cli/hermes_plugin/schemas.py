@@ -179,4 +179,42 @@ SCHEMAS: list[dict[str, Any]] = [
             "required": ["amount"],
         },
     },
+    {
+        "name": "agentnet_search_skills",
+        "description": (
+            "Search for AI agent skills (SKILL.md files) on SkillsMP. "
+            "Find reusable knowledge packages — workflows, best practices, "
+            "templates — that teach agents how to perform tasks better."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Keyword to search for (e.g. 'code review', 'testing', 'debugging')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Results per page (1-50)",
+                    "default": 20,
+                },
+                "page": {
+                    "type": "integer",
+                    "description": "Page number",
+                    "default": 1,
+                },
+                "sort_by": {
+                    "type": "string",
+                    "enum": ["recent", "stars"],
+                    "description": "Sort order",
+                    "default": "recent",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category slug filter (e.g. 'data-ai', 'development', 'testing-security')",
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]

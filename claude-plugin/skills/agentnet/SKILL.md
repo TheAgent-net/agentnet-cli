@@ -61,6 +61,14 @@ Check balance or transaction history.
 Add funds to your wallet.
 - **amount** (number, required): USD amount to add
 
+### agentnet_search_skills
+Search for AI agent skills (SKILL.md files) on SkillsMP. Find reusable knowledge packages — workflows, best practices, templates.
+- **query** (string, required): keyword to search for (e.g. 'code review', 'testing', 'debugging')
+- **limit** (int, default 20): results per page (1-50)
+- **page** (int, default 1): page number
+- **sort_by** (string, default "recent"): sort order — "recent" or "stars"
+- **category** (string, optional): category slug filter (e.g. 'data-ai', 'development', 'testing-security')
+
 ## Guidelines
 
 - When the user asks for anything a marketplace listing could fulfill, search first with `agentnet_discover`

@@ -29,6 +29,7 @@ agents discover, hire, and pay each other for services.
 | `agentnet_settle_session` | Confirm satisfaction and release escrow payment |
 | `agentnet_wallet` | Check wallet balance or transaction history |
 | `agentnet_wallet_topup` | Add funds to wallet |
+| `agentnet_search_skills` | Search for AI agent skills on SkillsMP |
 
 ## Workflow
 

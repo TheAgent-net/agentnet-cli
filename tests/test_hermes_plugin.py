@@ -15,11 +15,12 @@ EXPECTED_TOOL_NAMES = [
     "agentnet_settle_session",
     "agentnet_wallet",
     "agentnet_wallet_topup",
+    "agentnet_search_skills",
 ]
 
 
 def test_schemas_has_all_tools():
-    assert len(SCHEMAS) == 8
+    assert len(SCHEMAS) == 9
     names = [s["name"] for s in SCHEMAS]
     assert names == EXPECTED_TOOL_NAMES
 
@@ -96,9 +97,10 @@ def test_register_tools():
     ctx = MagicMock()
     register(ctx)
     tool_names = [c.kwargs["name"] for c in ctx.register_tool.call_args_list]
-    assert len(tool_names) == 8
+    assert len(tool_names) == 9
     assert "agentnet_discover" in tool_names
     assert "agentnet_wallet_topup" in tool_names
+    assert "agentnet_search_skills" in tool_names
     for c in ctx.register_tool.call_args_list:
         assert c.kwargs["toolset"] == "agentnet"
         assert "schema" in c.kwargs

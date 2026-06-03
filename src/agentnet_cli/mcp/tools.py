@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 
 from ..platform.client import PlatformClient
+from ..skills.client import SkillsClient
 
 
 class ToolHandlers:
@@ -15,12 +16,14 @@ class ToolHandlers:
         api_token: str,
         agent_id: str,
         http_client: httpx.Client | None = None,
+        skills_http_client: httpx.Client | None = None,
     ) -> None:
         self._client = PlatformClient(
             base_url=platform_url,
             api_token=api_token,
             http_client=http_client or httpx.Client(timeout=30.0),
         )
+        self._skills_client = SkillsClient(http_client=skills_http_client)
         self._agent_id = agent_id
 
     def discover(
@@ -65,3 +68,16 @@ class ToolHandlers:
         if amount <= 0 or amount > 10000:
             raise ValueError("amount must be between 0 (exclusive) and 10000")
         return self._client.wallet_topup(agent_id=self._agent_id, amount=amount)
+
+    def search_skills(
+        self,
+        *,
+        query: str,
+        limit: int = 20,
+        page: int = 1,
+        sort_by: str = "recent",
+        category: str | None = None,
+    ) -> dict[str, Any]:
+        return self._skills_client.search(
+            query=query, limit=limit, page=page, sort_by=sort_by, category=category,
+        )

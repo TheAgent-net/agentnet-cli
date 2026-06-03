@@ -195,3 +195,47 @@ def test_discover_agents():
     h = _make_handlers(handler)
     result = h.discover_agents(query="weather", limit=10)
     assert result["agents"] == ["a1", "a2"]
+
+
+# --- search_skills ---
+
+
+def test_search_skills():
+    payload = {"data": {"skills": [{"id": "s1", "name": "testing"}]}}
+
+    def skills_handler(req: httpx.Request) -> httpx.Response:
+        assert "/api/v1/skills/search" in req.url.path
+        assert req.url.params["q"] == "testing"
+        assert req.url.params["sortBy"] == "stars"
+        return httpx.Response(200, json=payload)
+
+    skills_http = httpx.Client(transport=httpx.MockTransport(skills_handler))
+    h = _make_handlers(lambda req: httpx.Response(200, json={}))
+    h._skills_client = __import__(
+        "agentnet_cli.skills.client", fromlist=["SkillsClient"]
+    ).SkillsClient(http_client=skills_http)
+
+    result = h.search_skills(query="testing", sort_by="stars")
+    assert result["data"]["skills"][0]["name"] == "testing"
+
+
+def test_search_skills_defaults():
+    calls: list[httpx.Request] = []
+
+    def skills_handler(req: httpx.Request) -> httpx.Response:
+        calls.append(req)
+        return httpx.Response(200, json={"data": {"skills": []}})
+
+    skills_http = httpx.Client(transport=httpx.MockTransport(skills_handler))
+    h = _make_handlers(lambda req: httpx.Response(200, json={}))
+    h._skills_client = __import__(
+        "agentnet_cli.skills.client", fromlist=["SkillsClient"]
+    ).SkillsClient(http_client=skills_http)
+
+    h.search_skills(query="debug")
+    url = calls[0].url
+    assert url.params["q"] == "debug"
+    assert url.params["limit"] == "20"
+    assert url.params["page"] == "1"
+    assert url.params["sortBy"] == "recent"
+    assert "category" not in dict(url.params)

@@ -67,3 +67,7 @@ def agentnet_wallet(args: dict[str, Any], **kwargs: Any) -> str:
 
 def agentnet_wallet_topup(args: dict[str, Any], **kwargs: Any) -> str:
     return _call("wallet_topup", args)
+
+
+def agentnet_search_skills(args: dict[str, Any], **kwargs: Any) -> str:
+    return _call("search_skills", args)
