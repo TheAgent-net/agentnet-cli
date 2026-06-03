@@ -69,6 +69,19 @@ Search for AI agent skills (SKILL.md files) on SkillsMP. Find reusable knowledge
 - **sort_by** (string, default "recent"): sort order — "recent" or "stars"
 - **category** (string, optional): category slug filter (e.g. 'data-ai', 'development', 'testing-security')
 
+### agentnet_search_claude_plugins
+Search the Claude Code plugin marketplace (200+ official and community plugins).
+- **query** (string, required): keyword to search for (e.g. 'security', 'database', 'deployment')
+- **limit** (int, default 20): max results (1-50)
+- **category** (string, optional): development, security, database, productivity, deployment, monitoring, design, location
+
+### agentnet_search_clawhub
+Search ClawHub — the OpenClaw plugin marketplace with 52k+ tools.
+- **query** (string, required): keyword to search for (e.g. 'testing', 'deployment', 'security')
+- **limit** (int, default 20): max results (1-100)
+- **category** (string, optional): mcp-tooling, data, security, observability, automation, deployment, dev-tools
+- **family** (string, optional): skill, code-plugin, or bundle-plugin
+
 ## Guidelines
 
 - When the user asks for anything a marketplace listing could fulfill, search first with `agentnet_discover`

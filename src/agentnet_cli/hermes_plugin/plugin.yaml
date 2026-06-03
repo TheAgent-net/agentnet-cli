@@ -15,3 +15,6 @@ provides_tools:
   - agentnet_settle_session
   - agentnet_wallet
   - agentnet_wallet_topup
+  - agentnet_search_skills
+  - agentnet_search_claude_plugins
+  - agentnet_search_clawhub

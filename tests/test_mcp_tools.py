@@ -239,3 +239,53 @@ def test_search_skills_defaults():
     assert url.params["page"] == "1"
     assert url.params["sortBy"] == "recent"
     assert "category" not in dict(url.params)
+
+
+# --- search_claude_plugins ---
+
+
+def test_search_claude_plugins():
+    catalog = {
+        "plugins": [
+            {
+                "name": "sql-helper",
+                "description": "SQL query builder",
+                "category": "database",
+                "author": {"name": "ACME"},
+            }
+        ]
+    }
+
+    def catalog_handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=catalog)
+
+    claude_http = httpx.Client(transport=httpx.MockTransport(catalog_handler))
+    h = _make_handlers(lambda req: httpx.Response(200, json={}))
+    h._claude_marketplace = __import__(
+        "agentnet_cli.plugins.claude_marketplace", fromlist=["ClaudeMarketplaceClient"]
+    ).ClaudeMarketplaceClient(http_client=claude_http)
+
+    result = h.search_claude_plugins(query="sql")
+    assert result["total"] == 1
+    assert result["results"][0]["name"] == "sql-helper"
+
+
+# --- search_clawhub ---
+
+
+def test_search_clawhub():
+    payload = {"results": [{"score": 3.0, "slug": "qa-testing", "displayName": "QA Testing"}]}
+
+    def clawhub_handler(req: httpx.Request) -> httpx.Response:
+        assert "/api/v1/search" in req.url.path
+        assert req.url.params["q"] == "testing"
+        return httpx.Response(200, json=payload)
+
+    clawhub_http = httpx.Client(transport=httpx.MockTransport(clawhub_handler))
+    h = _make_handlers(lambda req: httpx.Response(200, json={}))
+    h._clawhub_client = __import__(
+        "agentnet_cli.plugins.clawhub", fromlist=["ClawHubClient"]
+    ).ClawHubClient(http_client=clawhub_http)
+
+    result = h.search_clawhub(query="testing")
+    assert result["results"][0]["slug"] == "qa-testing"

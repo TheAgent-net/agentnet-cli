@@ -78,6 +78,8 @@ def _run_server(
         mock_instance.wallet.return_value = {"balance_minor": 1000}
         mock_instance.wallet_topup.return_value = {"ok": True}
         mock_instance.search_skills.return_value = {"data": {"skills": []}}
+        mock_instance.search_claude_plugins.return_value = {"results": [], "total": 0, "source": "claude-plugins-official"}
+        mock_instance.search_clawhub.return_value = {"results": []}
 
         serve()
 
@@ -137,7 +139,7 @@ class TestToolDefinitions:
             assert "description" in defn, f"Missing 'description' in {defn}"
             assert "inputSchema" in defn, f"Missing 'inputSchema' in {defn}"
 
-    def test_all_nine_tools_present(self):
+    def test_all_eleven_tools_present(self):
         names = {d["name"] for d in TOOL_DEFINITIONS}
         expected = {
             "agentnet_discover",
@@ -149,6 +151,8 @@ class TestToolDefinitions:
             "agentnet_wallet",
             "agentnet_wallet_topup",
             "agentnet_search_skills",
+            "agentnet_search_claude_plugins",
+            "agentnet_search_clawhub",
         }
         assert names == expected
 
@@ -188,7 +192,7 @@ class TestToolsList:
         responses = _run_server([req])
         assert len(responses) == 1
         tools = responses[0]["result"]["tools"]
-        assert len(tools) == 9
+        assert len(tools) == 11
         names = {t["name"] for t in tools}
         assert "agentnet_discover" in names
         assert "agentnet_wallet" in names
@@ -418,7 +422,7 @@ class TestMultipleRequests:
         responses = _run_server(lines)
         assert len(responses) == 3
         assert "protocolVersion" in responses[0]["result"]
-        assert len(responses[1]["result"]["tools"]) == 9
+        assert len(responses[1]["result"]["tools"]) == 11
         content_text = json.loads(responses[2]["result"]["content"][0]["text"])
         assert content_text == {"balance_minor": 1000}
 
@@ -466,7 +470,7 @@ class TestInvalidRequestWithoutId:
 
 
 class TestAllToolHandlers:
-    """Verify all 9 tools can be invoked successfully through serve()."""
+    """Verify all 11 tools can be invoked successfully through serve()."""
 
     @pytest.mark.parametrize(
         "tool_name,arguments",
@@ -480,6 +484,8 @@ class TestAllToolHandlers:
             ("agentnet_wallet", {"action": "balance"}),
             ("agentnet_wallet_topup", {"amount": 10.0}),
             ("agentnet_search_skills", {"query": "testing"}),
+            ("agentnet_search_claude_plugins", {"query": "security"}),
+            ("agentnet_search_clawhub", {"query": "testing"}),
         ],
     )
     def test_each_tool(self, tool_name: str, arguments: dict[str, Any]):

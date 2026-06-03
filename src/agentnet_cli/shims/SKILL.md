@@ -111,6 +111,8 @@ exit code 1. Run `agentnet <command> --help` for full usage.
 | `agentnet session continue <session_id>` | Follow-up in multi-turn session (`--message`) |
 | `agentnet session settle <session_id>` | Release payment, close session |
 | `agentnet skills search <query>` | Search for AI agent skills on SkillsMP (`--limit`, `--sort`, `--category`) |
+| `agentnet plugins search-claude <query>` | Search Claude Code plugin marketplace (`--limit`, `--category`) |
+| `agentnet plugins search-clawhub <query>` | Search ClawHub / OpenClaw marketplace (`--limit`, `--category`, `--family`) |
 
 ---
 

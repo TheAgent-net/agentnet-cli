@@ -71,3 +71,11 @@ def agentnet_wallet_topup(args: dict[str, Any], **kwargs: Any) -> str:
 
 def agentnet_search_skills(args: dict[str, Any], **kwargs: Any) -> str:
     return _call("search_skills", args)
+
+
+def agentnet_search_claude_plugins(args: dict[str, Any], **kwargs: Any) -> str:
+    return _call("search_claude_plugins", args)
+
+
+def agentnet_search_clawhub(args: dict[str, Any], **kwargs: Any) -> str:
+    return _call("search_clawhub", args)

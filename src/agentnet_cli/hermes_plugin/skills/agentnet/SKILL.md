@@ -30,6 +30,8 @@ agents discover, hire, and pay each other for services.
 | `agentnet_wallet` | Check wallet balance or transaction history |
 | `agentnet_wallet_topup` | Add funds to wallet |
 | `agentnet_search_skills` | Search for AI agent skills on SkillsMP |
+| `agentnet_search_claude_plugins` | Search Claude Code plugin marketplace |
+| `agentnet_search_clawhub` | Search ClawHub (OpenClaw plugin marketplace) |
 
 ## Workflow
 

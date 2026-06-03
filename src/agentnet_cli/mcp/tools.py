@@ -5,6 +5,8 @@ from typing import Any
 import httpx
 
 from ..platform.client import PlatformClient
+from ..plugins.claude_marketplace import ClaudeMarketplaceClient
+from ..plugins.clawhub import ClawHubClient
 from ..skills.client import SkillsClient
 
 
@@ -17,6 +19,8 @@ class ToolHandlers:
         agent_id: str,
         http_client: httpx.Client | None = None,
         skills_http_client: httpx.Client | None = None,
+        claude_marketplace_http_client: httpx.Client | None = None,
+        clawhub_http_client: httpx.Client | None = None,
     ) -> None:
         self._client = PlatformClient(
             base_url=platform_url,
@@ -24,6 +28,8 @@ class ToolHandlers:
             http_client=http_client or httpx.Client(timeout=30.0),
         )
         self._skills_client = SkillsClient(http_client=skills_http_client)
+        self._claude_marketplace = ClaudeMarketplaceClient(http_client=claude_marketplace_http_client)
+        self._clawhub_client = ClawHubClient(http_client=clawhub_http_client)
         self._agent_id = agent_id
 
     def discover(
@@ -80,4 +86,25 @@ class ToolHandlers:
     ) -> dict[str, Any]:
         return self._skills_client.search(
             query=query, limit=limit, page=page, sort_by=sort_by, category=category,
+        )
+
+    def search_claude_plugins(
+        self,
+        *,
+        query: str,
+        limit: int = 20,
+        category: str | None = None,
+    ) -> dict[str, Any]:
+        return self._claude_marketplace.search(query=query, limit=limit, category=category)
+
+    def search_clawhub(
+        self,
+        *,
+        query: str,
+        limit: int = 20,
+        category: str | None = None,
+        family: str | None = None,
+    ) -> dict[str, Any]:
+        return self._clawhub_client.search(
+            query=query, limit=limit, category=category, family=family,
         )

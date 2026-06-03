@@ -121,6 +121,33 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["query"],
         },
     },
+    {
+        "name": "agentnet_search_claude_plugins",
+        "description": "Search the Claude Code plugin marketplace. Find plugins that extend Claude Code with new tools, skills, and integrations. The catalog contains 200+ official and community plugins.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Keyword to search for (e.g. 'security', 'database', 'deployment')"},
+                "limit": {"type": "integer", "description": "Max results (1-50)", "default": 20},
+                "category": {"type": "string", "description": "Category filter: development, security, database, productivity, deployment, monitoring, design, location"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "agentnet_search_clawhub",
+        "description": "Search ClawHub — the OpenClaw plugin marketplace with 52k+ tools. Find skills, code-plugins, and bundle-plugins for OpenClaw agents.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Keyword to search for (e.g. 'testing', 'deployment', 'security')"},
+                "limit": {"type": "integer", "description": "Max results (1-100)", "default": 20},
+                "category": {"type": "string", "description": "Category filter: mcp-tooling, data, security, observability, automation, deployment, dev-tools"},
+                "family": {"type": "string", "enum": ["skill", "code-plugin", "bundle-plugin"], "description": "Package type filter"},
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 
@@ -173,6 +200,8 @@ def serve() -> None:
         "agentnet_wallet": lambda p: handlers.wallet(**p),
         "agentnet_wallet_topup": lambda p: handlers.wallet_topup(**p),
         "agentnet_search_skills": lambda p: handlers.search_skills(**p),
+        "agentnet_search_claude_plugins": lambda p: handlers.search_claude_plugins(**p),
+        "agentnet_search_clawhub": lambda p: handlers.search_clawhub(**p),
     }
 
     while True:

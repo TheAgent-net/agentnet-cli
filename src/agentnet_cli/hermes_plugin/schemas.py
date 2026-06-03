@@ -217,4 +217,61 @@ SCHEMAS: list[dict[str, Any]] = [
             "required": ["query"],
         },
     },
+    {
+        "name": "agentnet_search_claude_plugins",
+        "description": (
+            "Search the Claude Code plugin marketplace. "
+            "Find plugins that extend Claude Code with new tools, skills, and integrations."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Keyword to search for (e.g. 'security', 'database', 'deployment')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (1-50)",
+                    "default": 20,
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category filter: development, security, database, productivity, deployment, monitoring, design, location",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "agentnet_search_clawhub",
+        "description": (
+            "Search ClawHub — the OpenClaw plugin marketplace with 52k+ tools. "
+            "Find skills, code-plugins, and bundle-plugins for OpenClaw agents."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Keyword to search for (e.g. 'testing', 'deployment', 'security')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (1-100)",
+                    "default": 20,
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category filter: mcp-tooling, data, security, observability, automation, deployment, dev-tools",
+                },
+                "family": {
+                    "type": "string",
+                    "enum": ["skill", "code-plugin", "bundle-plugin"],
+                    "description": "Package type filter",
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
