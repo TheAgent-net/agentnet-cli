@@ -182,16 +182,38 @@ SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "agentnet_search_skills",
         "description": (
-            "Search for AI agent skills (SKILL.md files) on SkillsMP. "
-            "Find reusable knowledge packages — workflows, best practices, "
-            "templates — that teach agents how to perform tasks better."
+            "Search for AI agent skills on skills.sh (1.8M+ installs). "
+            "Find reusable SKILL.md knowledge packages — workflows, best practices, "
+            "templates. Install with: npx skills add <owner/repo@skill>"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Keyword to search for (e.g. 'code review', 'testing', 'debugging')",
+                    "description": "Keyword to search for (e.g. 'code review', 'testing', 'react')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (1-200)",
+                    "default": 20,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "agentnet_search_skillsmp",
+        "description": (
+            "Search for AI agent skills on SkillsMP (skillsmp.com). "
+            "Alternative skills index with category filtering and sort options."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Keyword to search for",
                 },
                 "limit": {
                     "type": "integer",

@@ -108,11 +108,23 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "agentnet_search_skills",
-        "description": "Search for AI agent skills (SKILL.md files) on SkillsMP. Find reusable knowledge packages — workflows, best practices, templates — that teach agents how to perform tasks better. Use when the user wants to find or install skills for their AI agents.",
+        "description": "Search for AI agent skills on skills.sh (1.8M+ installs). Find reusable SKILL.md knowledge packages — workflows, best practices, templates — that teach agents how to perform tasks better. Results include install counts and source repos. Install with: npx skills add <owner/repo@skill>",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Keyword to search for (e.g. 'code review', 'testing', 'debugging')"},
+                "query": {"type": "string", "description": "Keyword to search for (e.g. 'code review', 'testing', 'react')"},
+                "limit": {"type": "integer", "description": "Max results (1-200)", "default": 20},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "agentnet_search_skillsmp",
+        "description": "Search for AI agent skills on SkillsMP (skillsmp.com). Alternative skills index with category filtering and sort options. Use agentnet_search_skills (skills.sh) for the primary catalog.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Keyword to search for"},
                 "limit": {"type": "integer", "description": "Results per page (1-50)", "default": 20},
                 "page": {"type": "integer", "description": "Page number", "default": 1},
                 "sort_by": {"type": "string", "enum": ["recent", "stars"], "description": "Sort order", "default": "recent"},
@@ -200,6 +212,7 @@ def serve() -> None:
         "agentnet_wallet": lambda p: handlers.wallet(**p),
         "agentnet_wallet_topup": lambda p: handlers.wallet_topup(**p),
         "agentnet_search_skills": lambda p: handlers.search_skills(**p),
+        "agentnet_search_skillsmp": lambda p: handlers.search_skillsmp(**p),
         "agentnet_search_claude_plugins": lambda p: handlers.search_claude_plugins(**p),
         "agentnet_search_clawhub": lambda p: handlers.search_clawhub(**p),
     }

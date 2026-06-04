@@ -58,8 +58,13 @@ Add funds to your wallet.
 - **amount** (number, required): USD amount to add
 
 ### agentnet_search_skills
-Search for AI agent skills (SKILL.md files) on SkillsMP. Find reusable knowledge packages — workflows, best practices, templates.
-- **query** (string, required): keyword to search for (e.g. 'code review', 'testing', 'debugging')
+Search for AI agent skills on skills.sh (1.8M+ installs). The primary skills catalog — results include install counts and source repos. Install with: `npx skills add <owner/repo@skill>`
+- **query** (string, required): keyword to search for (e.g. 'code review', 'testing', 'react')
+- **limit** (int, default 20): max results (1-200)
+
+### agentnet_search_skillsmp
+Search for AI agent skills on SkillsMP (skillsmp.com). Alternative index with category filtering and sort options.
+- **query** (string, required): keyword to search for
 - **limit** (int, default 20): results per page (1-50)
 - **page** (int, default 1): page number
 - **sort_by** (string, default "recent"): sort order — "recent" or "stars"

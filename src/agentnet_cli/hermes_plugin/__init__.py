@@ -16,6 +16,7 @@ _HANDLER_MAP = {
     "agentnet_wallet": handlers.agentnet_wallet,
     "agentnet_wallet_topup": handlers.agentnet_wallet_topup,
     "agentnet_search_skills": handlers.agentnet_search_skills,
+    "agentnet_search_skillsmp": handlers.agentnet_search_skillsmp,
     "agentnet_search_claude_plugins": handlers.agentnet_search_claude_plugins,
     "agentnet_search_clawhub": handlers.agentnet_search_clawhub,
 }

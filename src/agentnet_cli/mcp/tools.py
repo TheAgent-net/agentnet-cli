@@ -8,6 +8,7 @@ from ..platform.client import PlatformClient
 from ..plugins.claude_marketplace import ClaudeMarketplaceClient
 from ..plugins.clawhub import ClawHubClient
 from ..skills.client import SkillsClient
+from ..skills.skillsmp import SkillsMPClient
 
 
 class ToolHandlers:
@@ -19,6 +20,7 @@ class ToolHandlers:
         agent_id: str,
         http_client: httpx.Client | None = None,
         skills_http_client: httpx.Client | None = None,
+        skillsmp_http_client: httpx.Client | None = None,
         claude_marketplace_http_client: httpx.Client | None = None,
         clawhub_http_client: httpx.Client | None = None,
     ) -> None:
@@ -28,6 +30,7 @@ class ToolHandlers:
             http_client=http_client or httpx.Client(timeout=30.0),
         )
         self._skills_client = SkillsClient(http_client=skills_http_client)
+        self._skillsmp_client = SkillsMPClient(http_client=skillsmp_http_client)
         self._claude_marketplace = ClaudeMarketplaceClient(http_client=claude_marketplace_http_client)
         self._clawhub_client = ClawHubClient(http_client=clawhub_http_client)
         self._agent_id = agent_id
@@ -80,11 +83,19 @@ class ToolHandlers:
         *,
         query: str,
         limit: int = 20,
+    ) -> dict[str, Any]:
+        return self._skills_client.search(query=query, limit=limit)
+
+    def search_skillsmp(
+        self,
+        *,
+        query: str,
+        limit: int = 20,
         page: int = 1,
         sort_by: str = "recent",
         category: str | None = None,
     ) -> dict[str, Any]:
-        return self._skills_client.search(
+        return self._skillsmp_client.search(
             query=query, limit=limit, page=page, sort_by=sort_by, category=category,
         )
 

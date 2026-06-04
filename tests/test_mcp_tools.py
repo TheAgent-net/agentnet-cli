@@ -201,12 +201,11 @@ def test_discover_agents():
 
 
 def test_search_skills():
-    payload = {"data": {"skills": [{"id": "s1", "name": "testing"}]}}
+    payload = {"skills": [{"id": "org/repo/testing", "name": "testing", "installs": 100}], "count": 1}
 
     def skills_handler(req: httpx.Request) -> httpx.Response:
-        assert "/api/v1/skills/search" in req.url.path
+        assert "/api/search" in req.url.path
         assert req.url.params["q"] == "testing"
-        assert req.url.params["sortBy"] == "stars"
         return httpx.Response(200, json=payload)
 
     skills_http = httpx.Client(transport=httpx.MockTransport(skills_handler))
@@ -215,8 +214,8 @@ def test_search_skills():
         "agentnet_cli.skills.client", fromlist=["SkillsClient"]
     ).SkillsClient(http_client=skills_http)
 
-    result = h.search_skills(query="testing", sort_by="stars")
-    assert result["data"]["skills"][0]["name"] == "testing"
+    result = h.search_skills(query="testing")
+    assert result["skills"][0]["name"] == "testing"
 
 
 def test_search_skills_defaults():
@@ -224,7 +223,7 @@ def test_search_skills_defaults():
 
     def skills_handler(req: httpx.Request) -> httpx.Response:
         calls.append(req)
-        return httpx.Response(200, json={"data": {"skills": []}})
+        return httpx.Response(200, json={"skills": [], "count": 0})
 
     skills_http = httpx.Client(transport=httpx.MockTransport(skills_handler))
     h = _make_handlers(lambda req: httpx.Response(200, json={}))
@@ -236,9 +235,28 @@ def test_search_skills_defaults():
     url = calls[0].url
     assert url.params["q"] == "debug"
     assert url.params["limit"] == "20"
-    assert url.params["page"] == "1"
-    assert url.params["sortBy"] == "recent"
-    assert "category" not in dict(url.params)
+
+
+# --- search_skillsmp ---
+
+
+def test_search_skillsmp():
+    payload = {"data": [{"id": "s1", "name": "testing"}]}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert "/api/v1/skills/search" in req.url.path
+        assert req.url.params["q"] == "testing"
+        assert req.url.params["sortBy"] == "stars"
+        return httpx.Response(200, json=payload)
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    h = _make_handlers(lambda req: httpx.Response(200, json={}))
+    h._skillsmp_client = __import__(
+        "agentnet_cli.skills.skillsmp", fromlist=["SkillsMPClient"]
+    ).SkillsMPClient(http_client=http)
+
+    result = h.search_skillsmp(query="testing", sort_by="stars")
+    assert result["data"][0]["name"] == "testing"
 
 
 # --- search_claude_plugins ---

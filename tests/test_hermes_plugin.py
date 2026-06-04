@@ -16,13 +16,14 @@ EXPECTED_TOOL_NAMES = [
     "agentnet_wallet",
     "agentnet_wallet_topup",
     "agentnet_search_skills",
+    "agentnet_search_skillsmp",
     "agentnet_search_claude_plugins",
     "agentnet_search_clawhub",
 ]
 
 
 def test_schemas_has_all_tools():
-    assert len(SCHEMAS) == 11
+    assert len(SCHEMAS) == 12
     names = [s["name"] for s in SCHEMAS]
     assert names == EXPECTED_TOOL_NAMES
 
@@ -99,7 +100,7 @@ def test_register_tools():
     ctx = MagicMock()
     register(ctx)
     tool_names = [c.kwargs["name"] for c in ctx.register_tool.call_args_list]
-    assert len(tool_names) == 11
+    assert len(tool_names) == 12
     assert "agentnet_discover" in tool_names
     assert "agentnet_wallet_topup" in tool_names
     assert "agentnet_search_skills" in tool_names
@@ -128,7 +129,7 @@ def test_plugin_yaml_exists():
 
     data = yaml.safe_load(plugin_yaml.read_text())
     assert data["name"] == "agentnet"
-    assert len(data["provides_tools"]) == 11
+    assert len(data["provides_tools"]) == 12
 
 
 def test_skill_md_exists():

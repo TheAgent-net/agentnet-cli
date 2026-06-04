@@ -16,5 +16,6 @@ provides_tools:
   - agentnet_wallet
   - agentnet_wallet_topup
   - agentnet_search_skills
+  - agentnet_search_skillsmp
   - agentnet_search_claude_plugins
   - agentnet_search_clawhub

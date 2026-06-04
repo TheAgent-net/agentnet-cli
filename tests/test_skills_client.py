@@ -19,43 +19,32 @@ def _client(status: int = 200, body: dict | None = None) -> SkillsClient:
 class TestSearch:
     def test_happy_path(self):
         payload = {
-            "data": [{"id": "s1", "name": "code-review", "author": "alice"}],
-            "pagination": {"page": 1, "total": 1, "hasNext": False},
+            "query": "testing",
+            "searchType": "fuzzy",
+            "skills": [{"id": "org/repo/skill", "name": "test-skill", "installs": 100, "source": "org/repo"}],
+            "count": 1,
+            "duration_ms": 50,
         }
         with _client(body=payload) as client:
-            result = client.search(query="code review")
-        assert result["data"][0]["name"] == "code-review"
+            result = client.search(query="testing")
+        assert result["skills"][0]["name"] == "test-skill"
+        assert result["count"] == 1
 
-    def test_passes_all_params(self):
+    def test_passes_params(self):
         calls: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             calls.append(request)
-            return httpx.Response(200, json={"data": []})
+            return httpx.Response(200, json={"skills": [], "count": 0})
 
         http = httpx.Client(transport=httpx.MockTransport(handler))
         with SkillsClient(http_client=http) as client:
-            client.search(query="test", limit=5, page=2, sort_by="stars", category="data-ai")
+            client.search(query="react", limit=5)
 
         url = calls[0].url
-        assert url.params["q"] == "test"
+        assert url.params["q"] == "react"
         assert url.params["limit"] == "5"
-        assert url.params["page"] == "2"
-        assert url.params["sortBy"] == "stars"
-        assert url.params["category"] == "data-ai"
-
-    def test_omits_category_when_none(self):
-        calls: list[httpx.Request] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            calls.append(request)
-            return httpx.Response(200, json={"data": []})
-
-        http = httpx.Client(transport=httpx.MockTransport(handler))
-        with SkillsClient(http_client=http) as client:
-            client.search(query="test")
-
-        assert "category" not in dict(calls[0].url.params)
+        assert "/api/search" in url.path
 
     def test_rate_limited(self):
         with _client(status=429, body={"error": "too many"}) as client:
