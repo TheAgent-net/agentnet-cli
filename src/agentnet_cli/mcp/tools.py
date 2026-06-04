@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -8,6 +9,7 @@ from ..platform.client import PlatformClient
 from ..plugins.claude_marketplace import ClaudeMarketplaceClient
 from ..plugins.clawhub import ClawHubClient
 from ..skills.client import SkillsClient
+from ..skills.discovery import SkillDiscovery
 from ..skills.skillsmp import SkillsMPClient
 
 
@@ -33,6 +35,16 @@ class ToolHandlers:
         self._skillsmp_client = SkillsMPClient(http_client=skillsmp_http_client)
         self._claude_marketplace = ClaudeMarketplaceClient(http_client=claude_marketplace_http_client)
         self._clawhub_client = ClawHubClient(http_client=clawhub_http_client)
+        self._discovery = SkillDiscovery(
+            platform_url=platform_url,
+            api_token=api_token,
+            openai_api_key=os.environ.get("OPENAI_API_KEY") or None,
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY") or None,
+            skills_client=self._skills_client,
+            skillsmp_client=self._skillsmp_client,
+            clawhub_client=self._clawhub_client,
+            claude_marketplace=self._claude_marketplace,
+        )
         self._agent_id = agent_id
 
     def discover(
@@ -98,6 +110,14 @@ class ToolHandlers:
         return self._skillsmp_client.search(
             query=query, limit=limit, page=page, sort_by=sort_by, category=category,
         )
+
+    def discover_skills(
+        self,
+        *,
+        use_case: str,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        return self._discovery.discover(use_case=use_case, limit=limit)
 
     def search_claude_plugins(
         self,

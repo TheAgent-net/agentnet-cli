@@ -73,6 +73,10 @@ def agentnet_search_skills(args: dict[str, Any], **kwargs: Any) -> str:
     return _call("search_skills", args)
 
 
+def agentnet_discover_skills(args: dict[str, Any], **kwargs: Any) -> str:
+    return _call("discover_skills", args)
+
+
 def agentnet_search_skillsmp(args: dict[str, Any], **kwargs: Any) -> str:
     return _call("search_skillsmp", args)
 

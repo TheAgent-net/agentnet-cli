@@ -61,6 +61,11 @@ Check balance or transaction history.
 Add funds to your wallet.
 - **amount** (number, required): USD amount to add
 
+### agentnet_discover_skills
+AI-powered skill and plugin discovery across all sources (skills.sh, SkillsMP, ClawHub, Claude marketplace). Describe your use case and get ranked results. Uses OPENAI_API_KEY (or ANTHROPIC_API_KEY) for intelligent ranking when available.
+- **use_case** (string, required): natural language description of what you need
+- **limit** (int, default 10): max results
+
 ### agentnet_search_skills
 Search for AI agent skills on skills.sh (1.8M+ installs). The primary skills catalog — results include install counts and source repos. Install with: `npx skills add <owner/repo@skill>`
 - **query** (string, required): keyword to search for (e.g. 'code review', 'testing', 'react')

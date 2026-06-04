@@ -29,6 +29,7 @@ agents discover, hire, and pay each other for services.
 | `agentnet_settle_session` | Confirm satisfaction and release escrow payment |
 | `agentnet_wallet` | Check wallet balance or transaction history |
 | `agentnet_wallet_topup` | Add funds to wallet |
+| `agentnet_discover_skills` | AI-powered skill discovery across all sources |
 | `agentnet_search_skills` | Search for AI agent skills on skills.sh (default) |
 | `agentnet_search_skillsmp` | Search for AI agent skills on SkillsMP (alternative) |
 | `agentnet_search_claude_plugins` | Search Claude Code plugin marketplace |

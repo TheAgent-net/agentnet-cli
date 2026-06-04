@@ -119,6 +119,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "agentnet_discover_skills",
+        "description": "AI-powered skill and plugin discovery. Describe your use case in natural language and get the best matches from skills.sh, SkillsMP, ClawHub, and Claude marketplace — deduplicated and ranked. Uses OPENAI_API_KEY (or ANTHROPIC_API_KEY) for intelligent query expansion and result ranking when available; falls back to multi-keyword search otherwise. Prefer this over individual search tools when the user describes a need rather than a specific keyword.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "use_case": {"type": "string", "description": "Describe what you need in natural language (e.g. 'set up CI/CD pipeline for React app with testing')"},
+                "limit": {"type": "integer", "description": "Max results to return", "default": 10},
+            },
+            "required": ["use_case"],
+        },
+    },
+    {
         "name": "agentnet_search_skillsmp",
         "description": "Search for AI agent skills on SkillsMP (skillsmp.com). Alternative skills index with category filtering and sort options. Use agentnet_search_skills (skills.sh) for the primary catalog.",
         "inputSchema": {
@@ -212,6 +224,7 @@ def serve() -> None:
         "agentnet_wallet": lambda p: handlers.wallet(**p),
         "agentnet_wallet_topup": lambda p: handlers.wallet_topup(**p),
         "agentnet_search_skills": lambda p: handlers.search_skills(**p),
+        "agentnet_discover_skills": lambda p: handlers.discover_skills(**p),
         "agentnet_search_skillsmp": lambda p: handlers.search_skillsmp(**p),
         "agentnet_search_claude_plugins": lambda p: handlers.search_claude_plugins(**p),
         "agentnet_search_clawhub": lambda p: handlers.search_clawhub(**p),

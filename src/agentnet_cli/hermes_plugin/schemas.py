@@ -203,6 +203,29 @@ SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "agentnet_discover_skills",
+        "description": (
+            "AI-powered skill and plugin discovery across all sources. "
+            "Describe your use case and get ranked results from skills.sh, "
+            "SkillsMP, ClawHub, and Claude marketplace."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "use_case": {
+                    "type": "string",
+                    "description": "Describe what you need (e.g. 'set up CI/CD for React app')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results",
+                    "default": 10,
+                },
+            },
+            "required": ["use_case"],
+        },
+    },
+    {
         "name": "agentnet_search_skillsmp",
         "description": (
             "Search for AI agent skills on SkillsMP (skillsmp.com). "
