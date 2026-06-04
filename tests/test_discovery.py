@@ -45,17 +45,28 @@ def _mock_claude_mp(results):
 
 
 class TestExpandQueriesDeterministic:
-    def test_extracts_keywords(self):
+    def test_extracts_keywords_and_bigrams(self):
         disco = SkillDiscovery(
             skills_client=MagicMock(),
             skillsmp_client=MagicMock(),
             clawhub_client=MagicMock(),
             claude_marketplace=MagicMock(),
         )
-        queries = disco._expand_queries_deterministic("set up CI/CD pipeline for React app")
-        assert any("react" in q for q in queries)
-        assert any("ci" in q or "pipeline" in q for q in queries)
-        assert len(queries) >= 2
+        queries, concepts = disco._expand_queries_deterministic("set up CI/CD pipeline for React app")
+        all_text = " ".join(queries)
+        assert "react" in all_text
+        assert "pipeline" in all_text or "ci/cd" in all_text
+        assert len(queries) >= 3
+
+    def test_generates_bigrams(self):
+        disco = SkillDiscovery(
+            skills_client=MagicMock(),
+            skillsmp_client=MagicMock(),
+            clawhub_client=MagicMock(),
+            claude_marketplace=MagicMock(),
+        )
+        queries, _ = disco._expand_queries_deterministic("OAuth2 SSO SaaS platform")
+        assert any(" " in q for q in queries)
 
     def test_handles_simple_input(self):
         disco = SkillDiscovery(
@@ -64,7 +75,7 @@ class TestExpandQueriesDeterministic:
             clawhub_client=MagicMock(),
             claude_marketplace=MagicMock(),
         )
-        queries = disco._expand_queries_deterministic("testing")
+        queries, _ = disco._expand_queries_deterministic("testing")
         assert "testing" in queries
 
 
@@ -103,7 +114,7 @@ class TestDeduplicate:
 
 
 class TestRankDeterministic:
-    def test_ranks_by_source_count_then_installs(self):
+    def test_composite_score_blends_signals(self):
         disco = SkillDiscovery(
             skills_client=MagicMock(),
             skillsmp_client=MagicMock(),
@@ -111,14 +122,13 @@ class TestRankDeterministic:
             claude_marketplace=MagicMock(),
         )
         results = [
-            {"name": "a", "source_count": 1, "installs": 1000},
-            {"name": "b", "source_count": 3, "installs": 10},
-            {"name": "c", "source_count": 2, "installs": 500},
+            {"name": "react-testing", "source_count": 1, "installs": 1000, "description": "React testing patterns"},
+            {"name": "generic-tool", "source_count": 3, "installs": 10, "description": "Generic tool"},
+            {"name": "react-ci", "source_count": 2, "installs": 500, "description": "React CI/CD"},
         ]
-        ranked = disco._rank_deterministic(results)
-        assert ranked[0]["name"] == "b"
-        assert ranked[1]["name"] == "c"
-        assert ranked[2]["name"] == "a"
+        ranked = disco._rank_deterministic(results, "react testing")
+        # react-testing should rank high due to keyword overlap + installs
+        assert ranked[0]["name"] == "react-testing"
 
 
 class TestPlatformMode:
@@ -223,7 +233,7 @@ class TestExpandQueriesAI:
     def test_uses_openai_when_key_set(self):
         def mock_post(url, **kwargs):
             return httpx.Response(200, json={
-                "choices": [{"message": {"content": '["react testing", "ci cd", "deployment"]'}}],
+                "choices": [{"message": {"content": '{"queries":["react testing","ci cd","deployment"],"concepts":["react","cicd"]}'}}],
             })
 
         http = httpx.Client(transport=httpx.MockTransport(mock_post))
@@ -235,13 +245,14 @@ class TestExpandQueriesAI:
             claude_marketplace=MagicMock(),
             http_client=http,
         )
-        queries = disco._expand_queries("set up CI/CD for React")
+        queries, concepts = disco._expand_queries("set up CI/CD for React")
         assert queries == ["react testing", "ci cd", "deployment"]
+        assert "react" in concepts
 
     def test_uses_anthropic_when_key_set(self):
         def mock_post(url, **kwargs):
             return httpx.Response(200, json={
-                "content": [{"text": '["react hooks", "state management"]'}],
+                "content": [{"text": '{"queries":["react hooks","state management"],"concepts":["react"]}'}],
             })
 
         http = httpx.Client(transport=httpx.MockTransport(mock_post))
@@ -253,7 +264,7 @@ class TestExpandQueriesAI:
             claude_marketplace=MagicMock(),
             http_client=http,
         )
-        queries = disco._expand_queries("React state management")
+        queries, _ = disco._expand_queries("React state management")
         assert queries == ["react hooks", "state management"]
 
     def test_openai_preferred_over_anthropic(self):
@@ -262,7 +273,7 @@ class TestExpandQueriesAI:
         def mock_post(request: httpx.Request) -> httpx.Response:
             calls.append(request)
             return httpx.Response(200, json={
-                "choices": [{"message": {"content": '["query1"]'}}],
+                "choices": [{"message": {"content": '{"queries":["query1"],"concepts":["q"]}'}}],
             })
 
         http = httpx.Client(transport=httpx.MockTransport(mock_post))
@@ -276,6 +287,7 @@ class TestExpandQueriesAI:
             http_client=http,
         )
         disco._expand_queries("test")
+        assert len(calls) >= 1
         assert "openai" in str(calls[0].url)
 
     def test_falls_back_on_llm_error(self):
@@ -291,7 +303,7 @@ class TestExpandQueriesAI:
             claude_marketplace=MagicMock(),
             http_client=http,
         )
-        queries = disco._expand_queries("react testing")
+        queries, _ = disco._expand_queries("react testing")
         assert len(queries) >= 1
         assert any("react" in q for q in queries)
 
@@ -304,7 +316,7 @@ class TestExpandQueriesAI:
             claude_marketplace=_mock_claude_mp([]),
             http_client=httpx.Client(transport=httpx.MockTransport(
                 lambda r: httpx.Response(200, json={
-                    "choices": [{"message": {"content": '["testing"]'}}],
+                    "choices": [{"message": {"content": '{"queries":["testing"],"concepts":["test"]}'}}],
                 })
             )),
         )
