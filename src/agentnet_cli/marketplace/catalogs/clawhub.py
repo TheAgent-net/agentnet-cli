@@ -56,6 +56,8 @@ class ClawHubClient:
         family: str | None = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"q": query, "limit": limit}
+        if sort:
+            params["sort"] = sort
         if category:
             params["category"] = category
         if family:

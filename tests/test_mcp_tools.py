@@ -29,6 +29,33 @@ def _make_handlers(handler_fn, agent_id="agent_123"):
     )
 
 
+def test_handlers_context_manager_closes_owned_clients():
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={}))
+    platform_http = httpx.Client(transport=transport)
+    skills_http = httpx.Client(transport=transport)
+    skillsmp_http = httpx.Client(transport=transport)
+    claude_http = httpx.Client(transport=transport)
+    clawhub_http = httpx.Client(transport=transport)
+
+    with ToolHandlers(
+        platform_url="https://test.agentnet.market",
+        api_token="agn_test",
+        agent_id="agent_123",
+        http_client=platform_http,
+        skills_http_client=skills_http,
+        skillsmp_http_client=skillsmp_http,
+        claude_marketplace_http_client=claude_http,
+        clawhub_http_client=clawhub_http,
+    ) as handlers:
+        assert isinstance(handlers, ToolHandlers)
+
+    assert platform_http.is_closed
+    assert skills_http.is_closed
+    assert skillsmp_http.is_closed
+    assert claude_http.is_closed
+    assert clawhub_http.is_closed
+
+
 def test_discover(handlers):
     result = handlers.discover(query="translation")
     assert isinstance(result, dict)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
@@ -118,7 +117,7 @@ def search(
             "skills": _skill_search(query, limit),
             "plugins": _plugin_search(query, limit, category),
         }
-        print(json.dumps(result, indent=2))
+        output(result)
         return
 
     die("Not authenticated. Run 'agentnet setup' or set AGENTNET_TOKEN.")

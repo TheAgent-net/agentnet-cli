@@ -51,6 +51,16 @@ class ToolHandlers:
         )
         self._agent_id = agent_id
 
+    def close(self) -> None:
+        self._client.close()
+        self._discovery.close()
+
+    def __enter__(self) -> "ToolHandlers":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+
     def discover(
         self,
         *,

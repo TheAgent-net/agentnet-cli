@@ -318,3 +318,5 @@ def serve() -> None:
                 _write_response(_error_response(err_id, -32603, "Internal error"))
             except Exception:
                 pass
+
+    handlers.close()

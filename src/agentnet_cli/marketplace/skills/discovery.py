@@ -389,7 +389,9 @@ class SkillDiscovery:
                     # Prefer richer description
                     if len(r.get("description", "")) < len(existing.get("description", "")):
                         r["description"] = existing["description"]
-                    seen[key] = r
+                    for alias, value in list(seen.items()):
+                        if value is existing:
+                            seen[alias] = r
                 else:
                     existing["_sources"] = existing.get("_sources", {existing.get("source", "")})
                     existing["_sources"].add(r.get("source", ""))

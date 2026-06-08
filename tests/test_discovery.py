@@ -112,6 +112,22 @@ class TestDeduplicate:
         unique = disco._deduplicate(results)
         assert unique[0]["installs"] == 1000
 
+    def test_replacement_updates_registered_aliases(self):
+        disco = SkillDiscovery(
+            skills_client=MagicMock(),
+            skillsmp_client=MagicMock(),
+            clawhub_client=MagicMock(),
+            claude_marketplace=MagicMock(),
+        )
+        results = [
+            {"name": "code reviews", "source": "clawhub", "installs": 100},
+            {"name": "code review", "source": "skills.sh", "installs": 500},
+        ]
+        unique = disco._deduplicate(results)
+        assert len(unique) == 1
+        assert unique[0]["name"] == "code review"
+        assert unique[0]["source_count"] == 2
+
 
 class TestRankDeterministic:
     def test_composite_score_blends_signals(self):

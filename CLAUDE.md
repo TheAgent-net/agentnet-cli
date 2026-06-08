@@ -8,7 +8,7 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
-- **Testing:** pytest (270 tests), pytest-cov
+- **Testing:** pytest (354 tests), pytest-cov
 - **CI:** GitHub Actions (lint + test matrix on 3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 

@@ -388,6 +388,26 @@ class TestEOFHandling:
         responses = _run_server([])
         assert responses == []
 
+    def test_empty_stdin_closes_handlers(self):
+        stdin = io.StringIO("")
+        stdout = io.StringIO()
+        config = {
+            "api_token": "test_token",
+            "platform_url": "https://test.agentnet.market",
+            "agent_id": "agent_test_1",
+        }
+
+        with (
+            patch("agentnet_cli.tools.mcp_server.sys.stdin", stdin),
+            patch("agentnet_cli.tools.mcp_server.sys.stdout", stdout),
+            patch("agentnet_cli.tools.mcp_server.load_config", return_value=config),
+            patch("agentnet_cli.tools.mcp_server.os.environ", {}),
+            patch("agentnet_cli.tools.mcp_server.ToolHandlers") as MockHandlers,
+        ):
+            serve()
+
+        MockHandlers.return_value.close.assert_called_once()
+
 
 class TestNoTokenConfigured:
     """16. No token anywhere causes ``sys.exit(1)``."""

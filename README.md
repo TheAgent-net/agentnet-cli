@@ -206,7 +206,7 @@ For MCP agents, the CLI writes config files that tell your agent about the MCP s
 
 ```bash
 uv sync                          # Install deps
-uv run pytest -v                 # Run tests (256 tests)
+uv run pytest -v                 # Run tests (354 tests)
 uv run pytest --cov -q           # With coverage
 uv run ruff check .              # Lint
 uv run agentnet --help           # Run locally
