@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import getpass
-import os
 import socket
 import time
 import webbrowser
@@ -11,11 +10,10 @@ from rich.console import Console
 from rich.table import Table
 
 from ...infra.config import load_config, save_config
+from ...infra.platform import resolve_platform_url
 from ...marketplace.client import PlatformClient
 
 console = Console()
-
-DEFAULT_PLATFORM_URL = "https://app.agentnet.market"
 DEFAULT_LOGIN_TIMEOUT_SECONDS = 10 * 60
 
 
@@ -31,7 +29,7 @@ def register_command(
         if not typer.confirm("  Re-register?"):
             return
 
-    url = platform_url or os.environ.get("AGENTNET_URL") or DEFAULT_PLATFORM_URL
+    url = resolve_platform_url(explicit_url=platform_url, use_config=False)
 
     client = PlatformClient(base_url=url)
     info = _browser_login(client)

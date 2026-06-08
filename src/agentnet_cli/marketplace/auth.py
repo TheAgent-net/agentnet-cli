@@ -5,6 +5,7 @@ import os
 from typing import Any, NoReturn
 
 from ..infra.config import load_config
+from ..infra.platform import resolve_platform_url
 from .client import PlatformClient
 
 
@@ -15,11 +16,7 @@ def get_client() -> PlatformClient:
         token = config.get("api_token", "")
     if not token:
         die("Not authenticated. Run 'agentnet setup' or set AGENTNET_TOKEN.")
-    platform_url = os.environ.get("AGENTNET_PLATFORM_URL", "")
-    if not platform_url and config:
-        platform_url = config.get("platform_url", "https://app.agentnet.market")
-    if not platform_url:
-        platform_url = "https://app.agentnet.market"
+    platform_url = resolve_platform_url(config=config)
     return PlatformClient(base_url=platform_url, api_token=token)
 
 

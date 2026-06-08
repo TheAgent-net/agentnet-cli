@@ -1,5 +1,6 @@
-from unittest.mock import patch
+import os
 from contextlib import nullcontext
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 from agentnet_cli.connectors.base import DetectionResult
@@ -177,6 +178,12 @@ def test_connect_not_registered(fake_home):
     """Connect without prior registration — shows 'Not registered' error."""
     result = runner.invoke(app, ["connect", "claude"])
     assert result.exit_code != 0 or "not registered" in result.stdout.lower()
+
+
+def test_dev_flag_sets_development_env(fake_home):
+    with patch("agentnet_cli.cli.core.updater.maybe_auto_update"):
+        runner.invoke(app, ["--dev", "detect"])
+    assert os.environ.get("AGENTNET_ENV") == "development"
 
 
 def test_setup_registers_when_missing_config(fake_home):

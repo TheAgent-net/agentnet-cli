@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from agentnet_cli import __version__
+from agentnet_cli.infra.platform import LOCAL_DEV_PLATFORM_URL, PRODUCTION_PLATFORM_URL
 
 app = typer.Typer(
     name="agentnet",
@@ -29,8 +30,16 @@ def main(
     version: bool = typer.Option(
         None, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version",
     ),
+    dev: bool = typer.Option(
+        False,
+        "--dev",
+        help=f"Use local platform ({LOCAL_DEV_PLATFORM_URL}) for this session",
+    ),
 ) -> None:
     """Discover AI coding agents on your system and connect them to the Agent-net marketplace."""
+    if dev:
+        os.environ.setdefault("AGENTNET_ENV", "development")
+
     try:
         from .core.updater import maybe_auto_update  # noqa: PLC0415
 
@@ -113,7 +122,7 @@ def detect() -> None:
 @app.command()
 def register(
     url: Optional[str] = typer.Option(
-        None, "--url", help="Platform URL (default: https://app.agentnet.market)",
+        None, "--url", help=f"Platform URL (default: {PRODUCTION_PLATFORM_URL})",
     ),
 ) -> None:
     """Sign in through the browser and register a CLI identity."""
@@ -125,7 +134,7 @@ def register(
 @app.command()
 def setup(
     url: Optional[str] = typer.Option(
-        None, "--url", help="Platform URL (default: https://app.agentnet.market)",
+        None, "--url", help=f"Platform URL (default: {PRODUCTION_PLATFORM_URL})",
     ),
     choose: bool = typer.Option(
         False,

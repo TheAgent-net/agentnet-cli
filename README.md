@@ -202,6 +202,29 @@ For MCP agents, the CLI writes config files that tell your agent about the MCP s
   backups/             # Original config backups
 ```
 
+## Environments
+
+PyPI installs default to production (`https://app.agentnet.market`) with no configuration.
+
+| Environment | How to target | URL |
+|-------------|---------------|-----|
+| Production (default) | *(none)* | `https://app.agentnet.market` |
+| Staging | `AGENTNET_ENV=staging` | `https://agent-net-server.narun.in` |
+| Local dev | `agentnet --dev setup` or `AGENTNET_ENV=development` | `http://localhost:8000` |
+
+Override the URL directly at any time:
+
+```bash
+# Explicit URL (highest precedence)
+export AGENTNET_PLATFORM_URL=http://localhost:8000
+agentnet setup
+
+# Or per command
+agentnet setup --url http://localhost:8000
+```
+
+Precedence: `--url` flag → `AGENTNET_PLATFORM_URL` → legacy `AGENTNET_URL` → `AGENTNET_ENV` → saved `~/.agentnet/config.json` → production default.
+
 ## Development
 
 ```bash
