@@ -21,7 +21,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Layers:
 - `marketplace/` — platform client, external catalogs, skill discovery
 - `tools/` — MCP stdio server + Hermes plugin
 - `infra/` — config, paths, manifest
-- `integrations/` — Claude and OpenClaw native plugin trees (repo root, not in wheel)
+- `src/agentnet_cli/integrations/` — Claude and OpenClaw native plugin trees (bundled in wheel)
 
 ## Key Commands
 

@@ -2,9 +2,6 @@
 
 ```
 agentnet-cli/
-├── integrations/          # Native plugins (not in the Python wheel)
-│   ├── claude/            # Claude Code marketplace + plugin tree
-│   └── openclaw/          # OpenClaw plugin tree
 ├── src/agentnet_cli/
 │   ├── cli/                 # Typer entry point and commands
 │   │   ├── main.py          # `agentnet` console script
@@ -12,7 +9,10 @@ agentnet-cli/
 │   │   └── marketplace/     # discover, agents, agent, search (JSON output)
 │   ├── connectors/          # Per-agent install connectors
 │   │   └── templates/       # File-injection shims (cursor, codex, copilot, vscode)
-│   ├── infra/               # config, paths, manifest
+│   ├── integrations/        # Claude + OpenClaw native plugin trees (in wheel)
+│   │   ├── claude/
+│   │   └── openclaw/
+│   ├── infra/               # config, paths, manifest, package_paths
 │   ├── marketplace/         # Platform API + catalogs + skill discovery
 │   │   ├── auth.py          # get_client(), output(), die()
 │   │   ├── client.py        # PlatformClient
@@ -35,7 +35,7 @@ agentnet-cli/
 | **marketplace** | HTTP clients for platform API and external catalogs |
 | **tools** | MCP/Hermes tool definitions exposed to connected agents |
 | **infra** | Local config (`~/.agentnet/`) and connection manifest |
-| **integrations** | Repo-root plugin trees installed by Claude/OpenClaw connectors |
+| **integrations** | Bundled plugin trees installed by Claude/OpenClaw connectors |
 
 ## Public discovery surface
 

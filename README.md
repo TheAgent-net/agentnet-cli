@@ -82,18 +82,19 @@ upgrades to the latest PyPI release, then re-applies integrations for connected 
 
 Silent auto-update runs in the background when you use connected agents (MCP startup and
 session hooks), rate-limited to once per 24 hours. Disable with `AGENTNET_AUTO_UPDATE=0`.
+Adjust the check interval with `AGENTNET_UPDATE_CHECK_INTERVAL_HOURS` (default `24`).
 
 ## Supported Agents
 
 | Agent | Config Path | What Gets Injected |
 |-------|-------------|-------------------|
-| Claude Code | `~/.claude/` | MCP in `~/.claude.json` + `SKILL.md` + permissions |
+| Claude Code | `~/.claude/` | Native plugin (skills, hooks, MCP) via bundled marketplace |
 | Cursor | `~/.cursor/` | MCP in `.cursor/mcp.json` + `.mdc` rule + subagent |
 | GitHub Copilot | `~/.copilot/` | MCP in `mcp-config.json` + `.agent.md` |
 | VS Code | varies by OS | MCP in settings.json + `instructions.md` |
 | OpenAI Codex | `~/.codex/` | TOML MCP in `config.toml` + `SKILL.md` |
 | Hermes (Nous) | `~/.hermes/` | Native plugin in `plugins/agentnet/` |
-| OpenClaw | `~/.openclaw/` | Plugin entry in `openclaw.json` |
+| OpenClaw | `~/.openclaw/` | Native plugin via bundled `integrations/openclaw` |
 
 ## Commands
 
@@ -157,11 +158,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full layout. Summary:
 src/agentnet_cli/
 ├── cli/           # main.py + core commands + marketplace commands
 ├── connectors/    # per-agent wiring + templates/
-├── infra/         # config, paths, manifest
+├── integrations/  # Claude + OpenClaw plugin trees (shipped in the wheel)
+├── infra/         # config, paths, manifest, package_paths
 ├── marketplace/   # platform client, catalogs, skills
 └── tools/         # MCP server + Hermes plugin
-
-integrations/      # Claude + OpenClaw native plugin trees (repo root)
 ```
 
 ## How It Works

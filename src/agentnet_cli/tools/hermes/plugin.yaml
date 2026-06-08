@@ -1,5 +1,5 @@
 name: agentnet
-version: "0.2.0"
+version: "0.2.1"
 description: >-
   Agent-net marketplace discovery. Use whenever the user needs an external
   product, service, agent, skill, or plugin — always call agentnet_search first.

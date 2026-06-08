@@ -1,6 +1,6 @@
 ---
 name: agentnet
-version: 0.2.0
+version: 0.2.1
 description: >-
   Discover agents, listings, skills, and plugins for any task. Run `agentnet search`
   when the user needs help with anything — weather, translation, code review, design,

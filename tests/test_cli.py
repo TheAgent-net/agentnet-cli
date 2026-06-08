@@ -116,7 +116,9 @@ def test_clear_path_nonexistent(fake_home):
 def test_version_flag(fake_home):
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.2.0" in result.stdout
+    from agentnet_cli import __version__
+
+    assert __version__ in result.stdout
 
 
 def test_disconnect_no_agent_specified(fake_home):
