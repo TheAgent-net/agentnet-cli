@@ -19,7 +19,7 @@ from .register import default_agent_name, register_command
 console = Console()
 
 
-def setup_command(platform_url: str | None = None) -> None:
+def setup_command(platform_url: str | None = None, *, choose: bool = False) -> None:
     config = load_config()
     if not config or not config.get("api_token"):
         console.print()
@@ -43,21 +43,25 @@ def setup_command(platform_url: str | None = None) -> None:
         return
 
     console.print()
+    if choose:
+        console.print(
+            f"  [bold]Step 3:[/bold] Choose agents to configure ({len(targets)} available)"
+        )
+        selected, connect_all = _select_targets(targets)
+        if not selected:
+            console.print("\n  [dim]No agents configured.[/dim]\n")
+            return
+        if connect_all:
+            connect_command(connect_all=True)
+            return
+        for agent_name in selected:
+            connect_command(agent_name=agent_name)
+        return
+
     console.print(
-        f"  [bold]Step 3:[/bold] Choose agents to configure "
-        f"([green]all recommended[/green], {len(targets)} available)"
+        f"  [bold]Step 3:[/bold] Configuring all detected agents ({len(targets)})"
     )
-    selected, connect_all = _select_targets(targets)
-    if not selected:
-        console.print("\n  [dim]No agents configured.[/dim]\n")
-        return
-
-    if connect_all:
-        connect_command(connect_all=True)
-        return
-
-    for agent_name in selected:
-        connect_command(agent_name=agent_name)
+    connect_command(connect_all=True)
 
 
 def _available_targets(results) -> list[str]:

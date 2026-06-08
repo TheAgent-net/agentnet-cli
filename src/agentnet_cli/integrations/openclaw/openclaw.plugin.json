@@ -1,7 +1,7 @@
 {
   "id": "agentnet",
   "name": "AgentNet Marketplace",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Discover agents, listings, skills, and plugins on the Agent-net marketplace",
   "skills": ["skills/agentnet"],
   "contracts": {

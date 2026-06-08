@@ -223,7 +223,7 @@ def test_setup_can_select_individual_detected_agent(fake_home):
 
     with patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
          patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
-        result = runner.invoke(app, ["setup"], input="2\n1\n")
+        result = runner.invoke(app, ["setup", "--choose"], input="2\n1\n")
 
     assert result.exit_code == 0
     connect.assert_called_once_with(agent_name="claude")
@@ -240,7 +240,7 @@ def test_setup_individual_mode_defaults_to_no_agents(fake_home):
 
     with patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
          patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
-        result = runner.invoke(app, ["setup"], input="2\n\n")
+        result = runner.invoke(app, ["setup", "--choose"], input="2\n\n")
 
     assert result.exit_code == 0
     assert "No agents configured" in result.stdout
@@ -255,7 +255,7 @@ def test_setup_can_skip_agent_configuration(fake_home):
 
     with patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
          patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
-        result = runner.invoke(app, ["setup"], input="3\n")
+        result = runner.invoke(app, ["setup", "--choose"], input="3\n")
 
     assert result.exit_code == 0
     assert "No agents configured" in result.stdout

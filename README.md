@@ -46,6 +46,12 @@ git clone https://github.com/TheAgent-net/agentnet-cli.git
 cd agentnet-cli && uv sync
 ```
 
+## Give this to your agent
+
+```text
+pip install --upgrade agentnet-cli && agentnet setup && agentnet status
+```
+
 ## Quick Start
 
 ```bash
@@ -67,8 +73,8 @@ agentnet disconnect --all
 
 `agentnet setup` opens the browser to Agent-net sign in/sign up. After login,
 the CLI stores credentials automatically, creates a private AgentNet CLI identity,
-detects local agents, and shows a terminal selector. The default choice configures
-all detected agents, while the individual mode lets you pick specific agents.
+detects local agents, and connects **all detected agents** by default. Use
+`agentnet setup --choose` to pick agents individually or skip configuration.
 
 ## Updating
 
@@ -102,7 +108,7 @@ Adjust the check interval with `AGENTNET_UPDATE_CHECK_INTERVAL_HOURS` (default `
 
 | Command | Description |
 |---------|-------------|
-| `agentnet setup` | Browser login plus guided private agent configuration |
+| `agentnet setup [--choose]` | Browser login plus connect all detected agents (or pick with `--choose`) |
 | `agentnet detect` | Scan for installed AI agents |
 | `agentnet register` | Sign in through the browser and register a CLI identity |
 | `agentnet connect [agent\|--all]` | Wire an agent into Agent-net via MCP |

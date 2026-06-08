@@ -127,11 +127,16 @@ def setup(
     url: Optional[str] = typer.Option(
         None, "--url", help="Platform URL (default: https://app.agentnet.market)",
     ),
+    choose: bool = typer.Option(
+        False,
+        "--choose",
+        help="Interactively choose which detected agents to configure",
+    ),
 ) -> None:
-    """Sign in and choose which detected agents to configure."""
+    """Sign in and configure all detected agents (use --choose to pick individually)."""
     from .core.setup_wizard import setup_command
 
-    setup_command(platform_url=url)
+    setup_command(platform_url=url, choose=choose)
 
 
 @app.command()
