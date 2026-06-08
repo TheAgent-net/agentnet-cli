@@ -2,8 +2,8 @@ from unittest.mock import patch
 from contextlib import nullcontext
 
 from typer.testing import CliRunner
-from agentnet_cli.agents.base import DetectionResult
-from agentnet_cli.main import app
+from agentnet_cli.connectors.base import DetectionResult
+from agentnet_cli.cli.main import app
 
 runner = CliRunner()
 
@@ -26,7 +26,7 @@ def test_detect_shows_table_with_agents(fake_home):
 def test_detect_shows_binary_status(fake_home):
     (fake_home / ".claude").mkdir()
     (fake_home / ".claude" / "settings.json").write_text("{}")
-    with patch("agentnet_cli.paths.shutil.which", return_value=None):
+    with patch("agentnet_cli.infra.paths.shutil.which", return_value=None):
         result = runner.invoke(app, ["detect"])
     assert result.exit_code == 0
     assert "not in PATH" in result.stdout
@@ -35,7 +35,7 @@ def test_detect_shows_binary_status(fake_home):
 def test_detect_shows_set_path_hint(fake_home):
     (fake_home / ".claude").mkdir()
     (fake_home / ".claude" / "settings.json").write_text("{}")
-    with patch("agentnet_cli.paths.shutil.which", return_value=None):
+    with patch("agentnet_cli.infra.paths.shutil.which", return_value=None):
         result = runner.invoke(app, ["detect"])
     assert result.exit_code == 0
     assert "set-path" in result.stdout
@@ -79,7 +79,7 @@ def test_set_path_command(fake_home):
     assert result.exit_code == 0
     assert "Claude" in result.stdout
 
-    from agentnet_cli.config import load_agent_paths
+    from agentnet_cli.infra.config import load_agent_paths
     assert load_agent_paths()["claude"] == str(fake_bin.resolve())
 
 
@@ -100,7 +100,7 @@ def test_set_path_shows_available_agents(fake_home):
 
 
 def test_clear_path_command(fake_home):
-    from agentnet_cli.config import save_agent_path
+    from agentnet_cli.infra.config import save_agent_path
     save_agent_path("claude", "/opt/claude")
     result = runner.invoke(app, ["clear-path", "claude"])
     assert result.exit_code == 0
@@ -116,7 +116,9 @@ def test_clear_path_nonexistent(fake_home):
 def test_version_flag(fake_home):
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.2.0" in result.stdout
+    from agentnet_cli import __version__
+
+    assert __version__ in result.stdout
 
 
 def test_disconnect_no_agent_specified(fake_home):
@@ -128,8 +130,13 @@ def test_update_command_already_latest(fake_home):
     """update when already on latest version just reports up-to-date."""
     from agentnet_cli import __version__
 
-    with patch("agentnet_cli.updater.refresh_stale_connections", return_value=0), \
-         patch("agentnet_cli.updater.check_pypi_latest", return_value=__version__):
+    with patch("agentnet_cli.cli.core.updater.clean_update") as mock_clean:
+        from agentnet_cli.cli.core.updater import AutoUpdateResult
+
+        mock_clean.return_value = AutoUpdateResult(
+            checked=True,
+            message=f"Already on latest version ({__version__})",
+        )
         result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     assert "latest" in result.stdout.lower() or "up to date" in result.stdout.lower()
@@ -137,8 +144,13 @@ def test_update_command_already_latest(fake_home):
 
 def test_update_command_pypi_unreachable(fake_home):
     """update when PyPI is unreachable still refreshes agent configs."""
-    with patch("agentnet_cli.updater.refresh_stale_connections", return_value=0), \
-         patch("agentnet_cli.updater.check_pypi_latest", return_value=None):
+    with patch("agentnet_cli.cli.core.updater.clean_update") as mock_clean:
+        from agentnet_cli.cli.core.updater import AutoUpdateResult
+
+        mock_clean.return_value = AutoUpdateResult(
+            checked=True,
+            message="Could not reach PyPI",
+        )
         result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
     assert "Could not reach PyPI" in result.stdout
@@ -153,7 +165,7 @@ def test_disconnect_not_connected(fake_home):
 
 def test_connect_unknown_agent(fake_home):
     """Connect an unknown agent name — shows error with available list."""
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "tok", "org_id": "o", "agent_id": "a"})
     result = runner.invoke(app, ["connect", "foobar"])
@@ -168,9 +180,9 @@ def test_connect_not_registered(fake_home):
 
 
 def test_setup_registers_when_missing_config(fake_home):
-    with patch("agentnet_cli.setup.register_command") as register, \
-         patch("agentnet_cli.setup.detect_all", return_value=[]), \
-         patch("agentnet_cli.setup.connect_command") as connect:
+    with patch("agentnet_cli.cli.core.setup_wizard.register_command") as register, \
+         patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=[]), \
+         patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
         result = runner.invoke(app, ["setup", "--url", "http://localhost:8006"])
 
     assert result.exit_code == 0
@@ -182,7 +194,7 @@ def test_setup_registers_when_missing_config(fake_home):
 
 
 def test_setup_connects_all_detected_agents_by_default(fake_home):
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
     detections = [
@@ -190,8 +202,8 @@ def test_setup_connects_all_detected_agents_by_default(fake_home):
         DetectionResult(agent_name="cursor", detected=False),
     ]
 
-    with patch("agentnet_cli.setup.detect_all", return_value=detections), \
-         patch("agentnet_cli.setup.connect_command") as connect:
+    with patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
+         patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
         result = runner.invoke(app, ["setup"])
 
     assert result.exit_code == 0
@@ -201,7 +213,7 @@ def test_setup_connects_all_detected_agents_by_default(fake_home):
 
 
 def test_setup_can_select_individual_detected_agent(fake_home):
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
     detections = [
@@ -209,16 +221,16 @@ def test_setup_can_select_individual_detected_agent(fake_home):
         DetectionResult(agent_name="cursor", detected=True),
     ]
 
-    with patch("agentnet_cli.setup.detect_all", return_value=detections), \
-         patch("agentnet_cli.setup.connect_command") as connect:
-        result = runner.invoke(app, ["setup"], input="2\n1\n")
+    with patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
+         patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
+        result = runner.invoke(app, ["setup", "--choose"], input="2\n1\n")
 
     assert result.exit_code == 0
     connect.assert_called_once_with(agent_name="claude")
 
 
 def test_setup_individual_mode_defaults_to_no_agents(fake_home):
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
     detections = [
@@ -226,9 +238,9 @@ def test_setup_individual_mode_defaults_to_no_agents(fake_home):
         DetectionResult(agent_name="cursor", detected=True),
     ]
 
-    with patch("agentnet_cli.setup.detect_all", return_value=detections), \
-         patch("agentnet_cli.setup.connect_command") as connect:
-        result = runner.invoke(app, ["setup"], input="2\n\n")
+    with patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
+         patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
+        result = runner.invoke(app, ["setup", "--choose"], input="2\n\n")
 
     assert result.exit_code == 0
     assert "No agents configured" in result.stdout
@@ -236,14 +248,14 @@ def test_setup_individual_mode_defaults_to_no_agents(fake_home):
 
 
 def test_setup_can_skip_agent_configuration(fake_home):
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
     detections = [DetectionResult(agent_name="claude", detected=True)]
 
-    with patch("agentnet_cli.setup.detect_all", return_value=detections), \
-         patch("agentnet_cli.setup.connect_command") as connect:
-        result = runner.invoke(app, ["setup"], input="3\n")
+    with patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
+         patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
+        result = runner.invoke(app, ["setup", "--choose"], input="3\n")
 
     assert result.exit_code == 0
     assert "No agents configured" in result.stdout
@@ -252,7 +264,7 @@ def test_setup_can_skip_agent_configuration(fake_home):
 
 def test_setup_menu_drawer_resets_columns(monkeypatch):
     import io
-    from agentnet_cli import setup
+    from agentnet_cli.cli.core import setup_wizard as setup
 
     output = io.StringIO()
     monkeypatch.setattr(setup.sys, "stdout", output)
@@ -263,7 +275,7 @@ def test_setup_menu_drawer_resets_columns(monkeypatch):
 
 
 def test_setup_tui_enter_selects_highlighted_agent(monkeypatch):
-    from agentnet_cli import setup
+    from agentnet_cli.cli.core import setup_wizard as setup
 
     monkeypatch.setattr(setup, "_use_terminal_menu", lambda: True)
     monkeypatch.setattr(setup, "_raw_terminal", nullcontext)
@@ -280,7 +292,7 @@ def test_setup_tui_enter_selects_highlighted_agent(monkeypatch):
 
 
 def test_setup_tui_can_explicitly_select_none(monkeypatch):
-    from agentnet_cli import setup
+    from agentnet_cli.cli.core import setup_wizard as setup
 
     monkeypatch.setattr(setup, "_use_terminal_menu", lambda: True)
     monkeypatch.setattr(setup, "_raw_terminal", nullcontext)
@@ -297,7 +309,7 @@ def test_setup_tui_can_explicitly_select_none(monkeypatch):
 
 
 def test_setup_tui_space_toggles_multiple_agents(monkeypatch):
-    from agentnet_cli import setup
+    from agentnet_cli.cli.core import setup_wizard as setup
 
     monkeypatch.setattr(setup, "_use_terminal_menu", lambda: True)
     monkeypatch.setattr(setup, "_raw_terminal", nullcontext)

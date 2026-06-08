@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from agentnet_cli.agents.cursor import CursorConnector
+from agentnet_cli.connectors.cursor import CursorConnector
 
 
 def _setup_cursor(home: Path) -> None:
@@ -27,7 +27,10 @@ def test_connect_creates_mdc_rule(fake_home):
     assert result.success
     mdc = fake_home / ".cursor" / "rules" / "agentnet.mdc"
     assert mdc.exists()
-    assert "agentnet_discover" in mdc.read_text()
+    assert "agentnet_search" in mdc.read_text()
+    perms = fake_home / ".cursor" / "permissions.json"
+    assert perms.exists()
+    assert "agentnet:*" in perms.read_text()
 
 
 def test_connect_creates_subagent(fake_home):

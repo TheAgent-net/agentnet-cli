@@ -1,6 +1,6 @@
 [project]
 name = "agentnet-cli"
-version = "0.2.0"
+version = "0.2.2"
 description = "Detect AI agents and connect them to the Agent-net marketplace"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,10 +32,10 @@ Repository = "https://github.com/TheAgent-net/agentnet-cli"
 Issues = "https://github.com/TheAgent-net/agentnet-cli/issues"
 
 [project.scripts]
-agentnet = "agentnet_cli.main:app"
+agentnet = "agentnet_cli.cli.main:app"
 
 [project.entry-points."hermes_agent.plugins"]
-agentnet = "agentnet_cli.hermes_plugin"
+agentnet = "agentnet_cli.tools.hermes"
 
 [build-system]
 requires = ["hatchling"]

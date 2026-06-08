@@ -1,4 +1,4 @@
-from agentnet_cli.config import load_agent_paths, load_config, remove_agent_path, save_agent_path, save_config
+from agentnet_cli.infra.config import load_agent_paths, load_config, remove_agent_path, save_agent_path, save_config
 
 
 def test_save_and_load_roundtrip(fake_home):
@@ -20,7 +20,7 @@ def test_load_returns_none_when_missing(fake_home):
 def test_config_file_has_restricted_permissions(fake_home):
     import stat
     save_config({"api_token": "secret"})
-    from agentnet_cli.paths import agentnet_home
+    from agentnet_cli.infra.paths import agentnet_home
     config_path = agentnet_home() / "config.json"
     mode = config_path.stat().st_mode
     assert not (mode & stat.S_IROTH)
@@ -49,7 +49,7 @@ def test_remove_nonexistent_path(fake_home):
 
 def test_load_corrupted_config(fake_home):
     """Corrupted JSON in config.json returns None instead of crashing (H-2 fix)."""
-    from agentnet_cli.paths import agentnet_home
+    from agentnet_cli.infra.paths import agentnet_home
 
     config_path = agentnet_home() / "config.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ def test_load_corrupted_config(fake_home):
 
 def test_atomic_write_creates_dirs(fake_home):
     """save_config creates parent dirs when they don't exist."""
-    from agentnet_cli.paths import agentnet_home
+    from agentnet_cli.infra.paths import agentnet_home
 
     # Ensure the .agentnet dir doesn't exist yet
     home = agentnet_home()
@@ -73,7 +73,7 @@ def test_atomic_write_restricted_permissions(fake_home):
     """Config file gets 0600 permissions (owner read/write only)."""
     import os
     import stat as stat_mod
-    from agentnet_cli.paths import agentnet_home
+    from agentnet_cli.infra.paths import agentnet_home
 
     save_config({"api_token": "secret"})
     config_path = agentnet_home() / "config.json"

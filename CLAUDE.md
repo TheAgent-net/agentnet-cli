@@ -8,68 +8,20 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
-- **Testing:** pytest (264 tests), pytest-cov
+- **Testing:** pytest (354 tests), pytest-cov
 - **CI:** GitHub Actions (lint + test matrix on 3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 
 ## Repository Structure
 
-```
-src/agentnet_cli/
-├── main.py              # Typer CLI entry point, registers all commands
-├── config.py            # ~/.agentnet/config.json persistence
-├── manifest.py          # Track injected files per agent for clean rollback
-├── detect.py            # Auto-detect installed agents by config dirs
-├── connect.py           # Connection flow: validate auth, invoke connectors
-├── disconnect.py        # Clean removal using manifest
-├── register.py          # OAuth2 registration with platform
-├── marketplace.py       # PlatformClient factory, JSON output helpers
-├── paths.py             # Agent enum, config roots, binary detection
-├── status.py            # Rich CLI status display
-├── updater.py           # Auto-update and config refresh
-├── agents/              # Per-agent connectors (7 agents)
-│   ├── base.py          # Abstract AgentConnector + DetectionResult/ConnectionResult
-│   ├── registry.py      # AgentName -> connector factory
-│   ├── claude.py        # Claude Code (delegates to `claude plugin` CLI)
-│   ├── cursor.py        # Cursor IDE
-│   ├── copilot.py       # GitHub Copilot
-│   ├── vscode.py        # VS Code
-│   ├── codex.py         # OpenAI Codex
-│   ├── hermes.py        # Hermes (native plugin system)
-│   ├── openclaw.py      # OpenClaw
-│   └── shims.py         # Template loader for config shims
-├── commands/            # Marketplace subcommands (JSON output)
-│   ├── discover.py      # discover, agents
-│   ├── agent.py         # agent, hire
-│   ├── wallet.py        # wallet balance/history/topup
-│   └── session.py       # session continue/settle
-├── mcp/                 # MCP JSON-RPC server (stdio transport)
-│   ├── server.py        # Tool definitions, request routing
-│   └── tools.py         # Tool handler implementations (8 tools)
-└── platform/
-    └── client.py        # PlatformClient (httpx REST wrapper)
+See [ARCHITECTURE.md](ARCHITECTURE.md). Layers:
 
-claude-plugin/           # Claude Code native plugin (installed via marketplace)
-├── .claude-plugin/
-│   └── plugin.json      # Plugin manifest
-├── skills/agentnet/
-│   └── SKILL.md         # Skill with marketplace context
-├── agents/
-│   └── marketplace.md   # Marketplace subagent
-├── hooks/
-│   └── hooks.json       # SessionStart auth check
-└── .mcp.json            # MCP server config
-
-marketplace.json         # Claude Code marketplace catalog
-
-tests/                   # 26 test files, 264 test functions
-├── conftest.py          # fake_home fixture (patches Path.home())
-├── test_cli.py          # CLI command tests (CliRunner)
-├── test_server.py       # MCP server tests
-├── test_mcp_tools.py    # MCP tool handler tests
-├── test_platform_client.py  # HTTP client tests (MockTransport)
-└── test_*.py            # Per-module tests
-```
+- `cli/` — Typer entry (`cli/main.py`), core commands, marketplace JSON commands
+- `connectors/` — per-agent wiring + `templates/` for file injection
+- `marketplace/` — platform client, external catalogs, skill discovery
+- `tools/` — MCP stdio server + Hermes plugin
+- `infra/` — config, paths, manifest
+- `src/agentnet_cli/integrations/` — Claude and OpenClaw native plugin trees (bundled in wheel)
 
 ## Key Commands
 
@@ -90,6 +42,7 @@ uv run agentnet --help           # Run locally
 - **Marketplace commands:** All output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
 - **Claude Code Plugin:** `agentnet connect claude` delegates to `claude plugin marketplace add` + `claude plugin install` instead of writing files directly. The plugin at `claude-plugin/` is installed via Claude Code's native marketplace system.
 - **Hermes Plugin:** `agentnet connect hermes` copies the plugin to `~/.hermes/plugins/agentnet/` and skills to `~/.hermes/skills/agentnet/`, using Hermes's native plugin system.
+- **OpenClaw Plugin:** `agentnet connect openclaw` delegates to `openclaw plugins install` + `openclaw plugins uninstall` instead of writing files directly. The plugin at `openclaw-plugin/` is a native OpenClaw plugin with `openclaw.plugin.json` manifest, publishable to ClawHub.
 - **Plugin hint:** The CLI emits a `<claude-code-hint>` tag on stderr when `CLAUDECODE=1` is set, prompting Claude Code users to install the plugin.
 
 ## Testing Patterns

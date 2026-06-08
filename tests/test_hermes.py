@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from agentnet_cli.agents.hermes import HermesConnector
+from agentnet_cli.connectors.hermes import HermesConnector
 
 
 def _setup_hermes(home: Path) -> None:

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentnet_cli.marketplace import die, get_agent_id, get_client, output
+from agentnet_cli.marketplace.auth import die, get_agent_id, get_client, output
 
 
 def test_get_client_from_env(fake_home, monkeypatch):
@@ -14,7 +14,7 @@ def test_get_client_from_env(fake_home, monkeypatch):
 
 
 def test_get_client_from_config(fake_home):
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "cfg-tok", "platform_url": "https://cfg.example.com"})
     client = get_client()
@@ -23,7 +23,7 @@ def test_get_client_from_config(fake_home):
 
 
 def test_get_client_env_overrides_config(fake_home, monkeypatch):
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "cfg-tok", "platform_url": "https://cfg.example.com"})
     monkeypatch.setenv("AGENTNET_TOKEN", "env-tok")
@@ -46,7 +46,7 @@ def test_get_client_default_platform_url(fake_home, monkeypatch):
 
 
 def test_get_agent_id_from_config(fake_home):
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "t", "agent_id": "agent-123"})
     assert get_agent_id() == "agent-123"
@@ -59,7 +59,7 @@ def test_get_agent_id_missing(fake_home):
 
 
 def test_get_agent_id_no_agent_id_key(fake_home):
-    from agentnet_cli.config import save_config
+    from agentnet_cli.infra.config import save_config
 
     save_config({"api_token": "t"})
     with pytest.raises(SystemExit) as exc_info:

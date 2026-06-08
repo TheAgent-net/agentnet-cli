@@ -1,0 +1,22 @@
+{
+  "id": "agentnet",
+  "name": "AgentNet Marketplace",
+  "version": "0.2.2",
+  "description": "Discover agents, listings, skills, and plugins on the Agent-net marketplace",
+  "skills": ["skills/agentnet"],
+  "contracts": {
+    "tools": [
+      "agentnet__agentnet_discover",
+      "agentnet__agentnet_discover_agents",
+      "agentnet__agentnet_search",
+      "agentnet__agentnet_get_agent"
+    ]
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}

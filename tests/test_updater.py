@@ -3,9 +3,15 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-from agentnet_cli.config import save_config
-from agentnet_cli.manifest import save_manifest
-from agentnet_cli.updater import _upgrade_command, check_pypi_latest, refresh_stale_connections
+from agentnet_cli.infra.config import save_config
+from agentnet_cli.infra.manifest import save_manifest
+from agentnet_cli.cli.core.updater import (
+    _upgrade_command,
+    check_pypi_latest,
+    clean_update,
+    detect_install_method,
+    refresh_stale_connections,
+)
 
 
 def test_refresh_no_config(fake_home):
@@ -34,7 +40,7 @@ def test_refresh_versions_match(fake_home):
     assert refresh_stale_connections() == 0
 
 
-@patch("agentnet_cli.updater.get_connector")
+@patch("agentnet_cli.cli.core.updater.get_connector")
 def test_refresh_stale_connection(mock_get_connector, fake_home):
     """Old cli_version + agent detected => connect() called, returns 1."""
     save_config({"api_token": "tok", "org_id": "o", "agent_id": "a"})
@@ -57,7 +63,7 @@ def test_refresh_stale_connection(mock_get_connector, fake_home):
     mock_connector.connect.assert_called_once()
 
 
-@patch("agentnet_cli.updater.get_connector")
+@patch("agentnet_cli.cli.core.updater.get_connector")
 def test_refresh_stale_undetected(mock_get_connector, fake_home):
     """Old version but agent not detected — skip, returns 0."""
     save_config({"api_token": "tok", "org_id": "o", "agent_id": "a"})
@@ -77,7 +83,7 @@ def test_refresh_stale_undetected(mock_get_connector, fake_home):
     mock_connector.connect.assert_not_called()
 
 
-@patch("agentnet_cli.updater.get_connector")
+@patch("agentnet_cli.cli.core.updater.get_connector")
 def test_refresh_connect_error(mock_get_connector, fake_home):
     """connect() raises OSError — logged, skipped, returns 0."""
     save_config({"api_token": "tok", "org_id": "o", "agent_id": "a"})
@@ -117,8 +123,8 @@ def test_check_pypi_latest_failure(mock_get):
     assert check_pypi_latest() is None
 
 
-@patch("agentnet_cli.updater.subprocess.run")
-@patch("agentnet_cli.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater.shutil.which")
 def test_upgrade_command_uv_tool(mock_which, mock_run):
     """uv detected and agentnet-cli in tool list => uv tool upgrade."""
     mock_which.side_effect = lambda cmd: "/usr/bin/uv" if cmd == "uv" else None
@@ -128,8 +134,8 @@ def test_upgrade_command_uv_tool(mock_which, mock_run):
     assert cmd == ["uv", "tool", "upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.updater.subprocess.run")
-@patch("agentnet_cli.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater.shutil.which")
 def test_upgrade_command_uv_no_false_positive(mock_which, mock_run):
     """uv tool list has 'my-agentnet-cli-fork' — should NOT match."""
     mock_which.side_effect = lambda cmd: "/usr/bin/uv" if cmd == "uv" else None
@@ -139,8 +145,8 @@ def test_upgrade_command_uv_no_false_positive(mock_which, mock_run):
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.updater.subprocess.run")
-@patch("agentnet_cli.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater.shutil.which")
 def test_upgrade_command_pipx(mock_which, mock_run):
     """pipx detected => pipx upgrade."""
     mock_which.side_effect = lambda cmd: "/usr/bin/pipx" if cmd == "pipx" else None
@@ -150,8 +156,8 @@ def test_upgrade_command_pipx(mock_which, mock_run):
     assert cmd == ["pipx", "upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.updater.subprocess.run")
-@patch("agentnet_cli.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater.shutil.which")
 def test_upgrade_command_pip_fallback(mock_which, mock_run):
     """No uv or pipx — falls back to pip."""
     mock_which.return_value = None
@@ -159,7 +165,7 @@ def test_upgrade_command_pip_fallback(mock_which, mock_run):
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.updater.get_connector")
+@patch("agentnet_cli.cli.core.updater.get_connector")
 def test_refresh_stale_quiet_suppresses_output(mock_get_connector, fake_home, capsys):
     """quiet=True with refreshed > 0 prints nothing."""
     save_config({"api_token": "tok", "org_id": "o", "agent_id": "a"})
@@ -184,7 +190,7 @@ def test_refresh_stale_quiet_suppresses_output(mock_get_connector, fake_home, ca
     assert "Refreshed" not in captured.err
 
 
-@patch("agentnet_cli.updater.get_connector")
+@patch("agentnet_cli.cli.core.updater.get_connector")
 def test_refresh_connect_returns_failure(mock_get_connector, fake_home, capsys):
     """connect() returns success=False — logs warning, does not count as refreshed."""
     save_config({"api_token": "tok", "org_id": "o", "agent_id": "a"})
@@ -204,12 +210,12 @@ def test_refresh_connect_returns_failure(mock_get_connector, fake_home, capsys):
     assert refresh_stale_connections() == 0
 
 
-@patch("agentnet_cli.updater.check_pypi_latest", return_value="9.9.9")
-@patch("agentnet_cli.updater._upgrade_command", return_value=["echo", "ok"])
-@patch("agentnet_cli.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater.check_pypi_latest", return_value="9.9.9")
+@patch("agentnet_cli.cli.core.updater._upgrade_command", return_value=["echo", "ok"])
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
 def test_self_upgrade_success(mock_run, mock_cmd, mock_pypi):
     """Successful upgrade returns (True, version)."""
-    from agentnet_cli.updater import self_upgrade
+    from agentnet_cli.cli.core.updater import self_upgrade
 
     mock_run.return_value = MagicMock(returncode=0)
     ok, msg = self_upgrade()
@@ -217,11 +223,11 @@ def test_self_upgrade_success(mock_run, mock_cmd, mock_pypi):
     assert msg == "9.9.9"
 
 
-@patch("agentnet_cli.updater._upgrade_command", return_value=["false"])
-@patch("agentnet_cli.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater._upgrade_command", return_value=["false"])
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
 def test_self_upgrade_failure(mock_run, mock_cmd):
     """Failed upgrade returns (False, stderr snippet)."""
-    from agentnet_cli.updater import self_upgrade
+    from agentnet_cli.cli.core.updater import self_upgrade
 
     mock_run.return_value = MagicMock(returncode=1, stderr="ERROR: no matching distribution")
     ok, msg = self_upgrade()
@@ -229,27 +235,27 @@ def test_self_upgrade_failure(mock_run, mock_cmd):
     assert "no matching distribution" in msg
 
 
-@patch("agentnet_cli.updater._upgrade_command", return_value=["false"])
-@patch("agentnet_cli.updater.subprocess.run", side_effect=OSError("command not found"))
+@patch("agentnet_cli.cli.core.updater._upgrade_command", return_value=["false"])
+@patch("agentnet_cli.cli.core.updater.subprocess.run", side_effect=OSError("command not found"))
 def test_self_upgrade_exception(mock_run, mock_cmd):
     """subprocess raises — returns (False, error string)."""
-    from agentnet_cli.updater import self_upgrade
+    from agentnet_cli.cli.core.updater import self_upgrade
 
     ok, msg = self_upgrade()
     assert ok is False
     assert "command not found" in msg
 
 
-@patch("agentnet_cli.updater.subprocess.run", side_effect=Exception("timeout"))
-@patch("agentnet_cli.updater.shutil.which", return_value="/usr/bin/uv")
+@patch("agentnet_cli.cli.core.updater.subprocess.run", side_effect=Exception("timeout"))
+@patch("agentnet_cli.cli.core.updater.shutil.which", return_value="/usr/bin/uv")
 def test_upgrade_command_uv_subprocess_error(mock_which, mock_run):
     """uv exists but subprocess fails — falls through to pip."""
     cmd = _upgrade_command()
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.updater.subprocess.run")
-@patch("agentnet_cli.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater.shutil.which")
 def test_upgrade_command_uv_not_in_tool_list(mock_which, mock_run):
     """uv exists but agentnet-cli not in tool list — tries pipx then pip."""
     mock_which.side_effect = lambda cmd: "/usr/bin/uv" if cmd == "uv" else None
@@ -258,8 +264,8 @@ def test_upgrade_command_uv_not_in_tool_list(mock_which, mock_run):
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.updater.subprocess.run")
-@patch("agentnet_cli.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater.shutil.which")
 def test_upgrade_command_pipx_subprocess_error(mock_which, mock_run):
     """pipx exists but subprocess fails — falls through to pip."""
     mock_which.side_effect = lambda cmd: "/usr/bin/pipx" if cmd == "pipx" else None
@@ -268,11 +274,34 @@ def test_upgrade_command_pipx_subprocess_error(mock_which, mock_run):
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.updater.subprocess.run")
-@patch("agentnet_cli.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.subprocess.run")
+@patch("agentnet_cli.cli.core.updater.shutil.which")
 def test_upgrade_command_pipx_not_in_list(mock_which, mock_run):
     """pipx exists but agentnet-cli not installed via pipx — falls to pip."""
     mock_which.side_effect = lambda cmd: "/usr/bin/pipx" if cmd == "pipx" else None
     mock_run.return_value = MagicMock(stdout="other-tool 1.0.0\n", returncode=0)
     cmd = _upgrade_command()
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
+
+
+@patch("agentnet_cli.cli.core.updater._spawn_refresh_with_upgraded_binary", return_value=0)
+@patch("agentnet_cli.cli.core.updater.self_upgrade", return_value=(True, "9.9.9"))
+@patch("agentnet_cli.cli.core.updater.check_pypi_latest", return_value="9.9.9")
+def test_clean_update_upgrades_and_refreshes(mock_pypi, mock_upgrade, mock_refresh):
+    result = clean_update(quiet=True)
+    assert result.upgraded is True
+    assert result.message == "Upgraded to 9.9.9"
+    mock_upgrade.assert_called_once_with(background=False, verbose=False)
+    mock_refresh.assert_called_once_with(quiet=True)
+
+
+@patch("agentnet_cli.cli.core.updater.refresh_stale_connections", return_value=2)
+def test_clean_update_refresh_only(mock_refresh):
+    result = clean_update(quiet=True, refresh_only=True)
+    assert result.refreshed == 2
+    mock_refresh.assert_called_once_with(quiet=True)
+
+
+@patch("agentnet_cli.cli.core.updater._upgrade_command", return_value=["pipx", "upgrade", "agentnet-cli"])
+def test_detect_install_method_pipx(mock_cmd):
+    assert detect_install_method() == "pipx"
