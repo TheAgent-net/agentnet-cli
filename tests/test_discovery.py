@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import httpx
 
-from agentnet_cli.skills.discovery import SkillDiscovery
+from agentnet_cli.marketplace.skills.discovery import SkillDiscovery
 
 
 def _mock_skills(results):

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from agentnet_cli.agents.copilot import CopilotConnector
+from agentnet_cli.connectors.copilot import CopilotConnector
 
 
 def _setup_copilot(home: Path) -> None:
@@ -20,7 +20,10 @@ def test_connect_creates_agent_md(fake_home):
     assert result.success
     agent_md = fake_home / ".copilot" / "agents" / "agentnet.agent.md"
     assert agent_md.exists()
-    assert "agentnet_discover" in agent_md.read_text()
+    assert "agentnet_search" in agent_md.read_text()
+    instructions = fake_home / ".copilot" / "copilot-instructions.md"
+    assert instructions.exists()
+    assert "agentnet_search" in instructions.read_text()
 
 
 def test_connect_writes_mcp_config(fake_home):

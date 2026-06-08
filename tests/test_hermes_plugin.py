@@ -3,20 +3,16 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from agentnet_cli.hermes_plugin import handlers, register
-from agentnet_cli.hermes_plugin.schemas import SCHEMAS
+from agentnet_cli.tools.hermes import handlers, register
+from agentnet_cli.tools.hermes.schemas import SCHEMAS
 
 EXPECTED_TOOL_NAMES = [
+    "agentnet_search",
     "agentnet_discover",
     "agentnet_discover_agents",
     "agentnet_get_agent",
-    "agentnet_use_agent",
-    "agentnet_continue_session",
-    "agentnet_settle_session",
-    "agentnet_wallet",
-    "agentnet_wallet_topup",
-    "agentnet_search_skills",
     "agentnet_discover_skills",
+    "agentnet_search_skills",
     "agentnet_search_skillsmp",
     "agentnet_search_claude_plugins",
     "agentnet_search_clawhub",
@@ -24,7 +20,7 @@ EXPECTED_TOOL_NAMES = [
 
 
 def test_schemas_has_all_tools():
-    assert len(SCHEMAS) == 13
+    assert len(SCHEMAS) == 9
     names = [s["name"] for s in SCHEMAS]
     assert names == EXPECTED_TOOL_NAMES
 
@@ -39,7 +35,7 @@ def test_schemas_use_parameters_not_input_schema():
 
 def test_handler_no_token(monkeypatch):
     monkeypatch.delenv("AGENTNET_TOKEN", raising=False)
-    monkeypatch.setattr("agentnet_cli.hermes_plugin.handlers.load_config", lambda: None)
+    monkeypatch.setattr("agentnet_cli.tools.hermes.handlers.load_config", lambda: None)
     result = json.loads(handlers.agentnet_discover({"query": "test"}))
     assert "error" in result
     assert "setup" in result["error"].lower()
@@ -49,7 +45,7 @@ def test_handler_returns_json(monkeypatch):
     mock_handlers = MagicMock()
     mock_handlers.discover.return_value = {"listings": []}
     monkeypatch.setattr(
-        "agentnet_cli.hermes_plugin.handlers._get_handlers",
+        "agentnet_cli.tools.hermes.handlers._get_handlers",
         lambda: mock_handlers,
     )
     result = handlers.agentnet_discover({"query": "weather"})
@@ -62,7 +58,7 @@ def test_handler_catches_exceptions(monkeypatch):
     mock_handlers = MagicMock()
     mock_handlers.discover.side_effect = RuntimeError("network down")
     monkeypatch.setattr(
-        "agentnet_cli.hermes_plugin.handlers._get_handlers",
+        "agentnet_cli.tools.hermes.handlers._get_handlers",
         lambda: mock_handlers,
     )
     result = json.loads(handlers.agentnet_discover({"query": "test"}))
@@ -72,8 +68,8 @@ def test_handler_catches_exceptions(monkeypatch):
 
 def test_handler_uses_env_token(monkeypatch):
     monkeypatch.setenv("AGENTNET_TOKEN", "env-token-123")
-    monkeypatch.setattr("agentnet_cli.hermes_plugin.handlers.load_config", lambda: None)
-    with patch("agentnet_cli.hermes_plugin.handlers.ToolHandlers") as mock_cls:
+    monkeypatch.setattr("agentnet_cli.tools.hermes.handlers.load_config", lambda: None)
+    with patch("agentnet_cli.tools.hermes.handlers.ToolHandlers") as mock_cls:
         mock_instance = MagicMock()
         mock_instance.discover.return_value = {"ok": True}
         mock_cls.return_value = mock_instance
@@ -101,9 +97,9 @@ def test_register_tools():
     ctx = MagicMock()
     register(ctx)
     tool_names = [c.kwargs["name"] for c in ctx.register_tool.call_args_list]
-    assert len(tool_names) == 13
+    assert len(tool_names) == 9
     assert "agentnet_discover" in tool_names
-    assert "agentnet_wallet_topup" in tool_names
+    assert "agentnet_search" in tool_names
     assert "agentnet_search_skills" in tool_names
     for c in ctx.register_tool.call_args_list:
         assert c.kwargs["toolset"] == "agentnet"
@@ -121,7 +117,7 @@ def test_register_skill():
 
 
 def test_plugin_yaml_exists():
-    from agentnet_cli.hermes_plugin import _PLUGIN_DIR
+    from agentnet_cli.tools.hermes import _PLUGIN_DIR
 
     plugin_yaml = _PLUGIN_DIR / "plugin.yaml"
     assert plugin_yaml.exists()
@@ -130,11 +126,11 @@ def test_plugin_yaml_exists():
 
     data = yaml.safe_load(plugin_yaml.read_text())
     assert data["name"] == "agentnet"
-    assert len(data["provides_tools"]) >= 13
+    assert len(data["provides_tools"]) >= 9
 
 
 def test_skill_md_exists():
-    from agentnet_cli.hermes_plugin import _PLUGIN_DIR
+    from agentnet_cli.tools.hermes import _PLUGIN_DIR
 
     skill_md = _PLUGIN_DIR / "skills" / "agentnet" / "SKILL.md"
     assert skill_md.exists()
@@ -144,6 +140,6 @@ def test_skill_md_exists():
 
 
 def test_entry_point_importable():
-    import agentnet_cli.hermes_plugin as hp
+    import agentnet_cli.tools.hermes as hp
 
     assert callable(hp.register)

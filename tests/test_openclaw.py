@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from agentnet_cli.agents.openclaw import OpenClawConnector
+from agentnet_cli.connectors.openclaw import OpenClawConnector
 
 _PLUGIN_ID = "agentnet"
 

@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from agentnet_cli.plugins.claude_marketplace import (
+from agentnet_cli.marketplace.catalogs.claude_marketplace import (
     ClaudeMarketplaceClient,
     ClaudeMarketplaceError,
 )

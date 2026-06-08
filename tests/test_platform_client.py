@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from agentnet_cli.platform.client import PlatformClient, PlatformError, _validate_path_segment
+from agentnet_cli.marketplace.client import PlatformClient, PlatformError, _validate_path_segment
 
 
 @pytest.fixture()
@@ -29,6 +29,19 @@ def _make_client(transport):
 def test_discover(client):
     result = client.discover(query="translation")
     assert "agents" in result
+
+
+def test_search_endpoint():
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/discover/search"
+        assert req.url.params["q"] == "translation"
+        assert req.url.params["type"] == "all"
+        assert req.url.params["limit"] == "7"
+        return httpx.Response(200, json={"query": "translation", "sources": []})
+
+    c = _make_client(httpx.MockTransport(handler))
+    result = c.search(query="translation", kind="all", limit=7)
+    assert result["query"] == "translation"
 
 
 def test_wallet_balance(mock_transport):

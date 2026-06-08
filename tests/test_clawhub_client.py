@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from agentnet_cli.plugins.clawhub import ClawHubClient, ClawHubError
+from agentnet_cli.marketplace.catalogs.clawhub import ClawHubClient, ClawHubError
 
 
 def _transport(status: int, body: dict):

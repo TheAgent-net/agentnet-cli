@@ -1,8 +1,9 @@
 import json
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
-from agentnet_cli.mcp.tools import ToolHandlers
+from agentnet_cli.tools.handlers import ToolHandlers
 
 
 @pytest.fixture()
@@ -197,6 +198,22 @@ def test_discover_agents():
     assert result["agents"] == ["a1", "a2"]
 
 
+# --- unified search ---
+
+
+def test_search_unified_platform():
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/discover/search"
+        assert req.url.params["q"] == "weather"
+        assert req.url.params["type"] == "all"
+        assert req.url.params["limit"] == "5"
+        return httpx.Response(200, json={"query": "weather", "sources": ["agents"]})
+
+    h = _make_handlers(handler)
+    result = h.search(query="weather", limit=5)
+    assert result["query"] == "weather"
+
+
 # --- search_skills ---
 
 
@@ -211,7 +228,7 @@ def test_search_skills():
     skills_http = httpx.Client(transport=httpx.MockTransport(skills_handler))
     h = _make_handlers(lambda req: httpx.Response(200, json={}))
     h._skills_client = __import__(
-        "agentnet_cli.skills.client", fromlist=["SkillsClient"]
+        "agentnet_cli.marketplace.skills.client", fromlist=["SkillsClient"]
     ).SkillsClient(http_client=skills_http)
 
     result = h.search_skills(query="testing")
@@ -228,13 +245,30 @@ def test_search_skills_defaults():
     skills_http = httpx.Client(transport=httpx.MockTransport(skills_handler))
     h = _make_handlers(lambda req: httpx.Response(200, json={}))
     h._skills_client = __import__(
-        "agentnet_cli.skills.client", fromlist=["SkillsClient"]
+        "agentnet_cli.marketplace.skills.client", fromlist=["SkillsClient"]
     ).SkillsClient(http_client=skills_http)
 
     h.search_skills(query="debug")
     url = calls[0].url
     assert url.params["q"] == "debug"
     assert url.params["limit"] == "20"
+
+
+# --- discover_skills ---
+
+
+def test_discover_skills():
+    h = _make_handlers(lambda req: httpx.Response(200, json={}))
+    h._discovery = MagicMock()
+    h._discovery.discover.return_value = {
+        "use_case": "react testing",
+        "results": [{"name": "react-test"}],
+    }
+
+    result = h.discover_skills(use_case="react testing", limit=3)
+
+    h._discovery.discover.assert_called_once_with(use_case="react testing", limit=3)
+    assert result["results"][0]["name"] == "react-test"
 
 
 # --- search_skillsmp ---
@@ -244,16 +278,20 @@ def test_search_skillsmp():
     payload = {"data": [{"id": "s1", "name": "testing"}]}
 
     def handler(req: httpx.Request) -> httpx.Response:
-        assert "/api/v1/skills/search" in req.url.path
+        assert req.url.path.endswith("/skills/skillsmp/search")
         assert req.url.params["q"] == "testing"
         assert req.url.params["sortBy"] == "stars"
+        assert req.headers.get("authorization") == "Bearer agn_test"
         return httpx.Response(200, json=payload)
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
-    h = _make_handlers(lambda req: httpx.Response(200, json={}))
-    h._skillsmp_client = __import__(
-        "agentnet_cli.skills.skillsmp", fromlist=["SkillsMPClient"]
-    ).SkillsMPClient(http_client=http)
+    h = ToolHandlers(
+        platform_url="https://test.agentnet.market",
+        api_token="agn_test",
+        agent_id="agent_123",
+        http_client=http,
+        skillsmp_http_client=http,
+    )
 
     result = h.search_skillsmp(query="testing", sort_by="stars")
     assert result["data"][0]["name"] == "testing"
@@ -280,7 +318,7 @@ def test_search_claude_plugins():
     claude_http = httpx.Client(transport=httpx.MockTransport(catalog_handler))
     h = _make_handlers(lambda req: httpx.Response(200, json={}))
     h._claude_marketplace = __import__(
-        "agentnet_cli.plugins.claude_marketplace", fromlist=["ClaudeMarketplaceClient"]
+        "agentnet_cli.marketplace.catalogs.claude_marketplace", fromlist=["ClaudeMarketplaceClient"]
     ).ClaudeMarketplaceClient(http_client=claude_http)
 
     result = h.search_claude_plugins(query="sql")
@@ -302,7 +340,7 @@ def test_search_clawhub():
     clawhub_http = httpx.Client(transport=httpx.MockTransport(clawhub_handler))
     h = _make_handlers(lambda req: httpx.Response(200, json={}))
     h._clawhub_client = __import__(
-        "agentnet_cli.plugins.clawhub", fromlist=["ClawHubClient"]
+        "agentnet_cli.marketplace.catalogs.clawhub", fromlist=["ClawHubClient"]
     ).ClawHubClient(http_client=clawhub_http)
 
     result = h.search_clawhub(query="testing")

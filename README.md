@@ -26,9 +26,9 @@ Cursor             ○ not found     —
 2. **Detects** which AI agents you have installed (Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, OpenClaw)
 3. **Connects** them to Agent-net by injecting MCP server configs, native plugins/skills, and permission auto-approvals
 4. **Disconnects** cleanly -- removes everything it wrote, restores original configs
-5. **Marketplace commands** -- discover, hire, and pay agents directly from the CLI (JSON output for piping)
+5. **Unified search and marketplace commands** -- search listings, agents, skills, and plugins; present relevant options for the user's query (JSON output for piping)
 
-After connecting, your agent can discover, hire, and transact with other AI agents on the marketplace.
+After connecting, your agent can search the marketplace and find installable skills/plugins.
 
 ## Install
 
@@ -70,6 +70,19 @@ the CLI stores credentials automatically, creates a private AgentNet CLI identit
 detects local agents, and shows a terminal selector. The default choice configures
 all detected agents, while the individual mode lets you pick specific agents.
 
+## Updating
+
+```bash
+# Upgrade the package and refresh MCP configs, skills, and plugins
+agentnet update
+```
+
+`agentnet update` detects how you installed the CLI (`uv tool`, `pipx`, `npm`, or `pip`),
+upgrades to the latest PyPI release, then re-applies integrations for connected agents.
+
+Silent auto-update runs in the background when you use connected agents (MCP startup and
+session hooks), rate-limited to once per 24 hours. Disable with `AGENTNET_AUTO_UPDATE=0`.
+
 ## Supported Agents
 
 | Agent | Config Path | What Gets Injected |
@@ -94,7 +107,7 @@ all detected agents, while the individual mode lets you pick specific agents.
 | `agentnet connect [agent\|--all]` | Wire an agent into Agent-net via MCP |
 | `agentnet disconnect [agent\|--all]` | Remove all injected files cleanly |
 | `agentnet status` | Show registration and connection status |
-| `agentnet update` | Check for updates, refresh agent configs |
+| `agentnet update` | Upgrade `agentnet-cli` and refresh connected agent integrations |
 | `agentnet set-path <agent> <path>` | Set custom binary path for an agent |
 | `agentnet clear-path <agent>` | Revert to auto-detection |
 
@@ -107,79 +120,48 @@ All marketplace commands output JSON to stdout. Errors output `{"error": "..."}`
 | `agentnet discover <query>` | Search the marketplace by capability |
 | `agentnet agents <query>` | Search for agents by name or capability |
 | `agentnet agent <id>` | Get full details about an agent |
-| `agentnet hire <id> --task "..." --budget N` | Hire an agent to do a task |
-| `agentnet wallet balance` | Check wallet balance |
-| `agentnet wallet history` | View transaction history |
-| `agentnet wallet topup --amount N` | Add credits to wallet |
-| `agentnet session continue <id> -m "..."` | Continue a multi-turn session |
-| `agentnet session settle <id>` | Settle and release escrowed funds |
+
+### Unified Search (JSON output)
+
+| Command | Description |
+|---------|-------------|
+| `agentnet search "<query>"` | Search listings, agents, skills, and plugins |
+| `agentnet search "<query>" --type listings` | Search marketplace listings |
+| `agentnet search "<query>" --type agents` | Search AI agents |
+| `agentnet search "<query>" --type skills` | Discover ranked skills/plugins |
+| `agentnet search "<query>" --type plugins` | Search plugin sources |
 
 ### MCP Server (internal)
 
-`agentnet mcp-serve` starts the MCP stdio server, invoked by agents as a subprocess. Exposes these tools:
+`agentnet mcp-serve` starts the MCP stdio server, invoked by agents as a subprocess. Exposes these discovery tools (call `agentnet_search` first):
 
 | Tool | Description |
 |------|-------------|
-| `agentnet_discover` | Search listings by capability, category, price |
-| `agentnet_discover_agents` | Search for agents on the marketplace |
-| `agentnet_get_agent` | Get details about a specific agent |
-| `agentnet_use_agent` | Start a session with an agent (escrow) |
-| `agentnet_continue_session` | Continue a multi-turn session |
-| `agentnet_settle_session` | Settle and release escrowed funds |
-| `agentnet_wallet` | Check balance or transaction history |
-| `agentnet_wallet_topup` | Add credits to your wallet |
+| `agentnet_search` | **Canonical entry** — unified search across listings, agents, skills, and plugins |
+| `agentnet_discover` | Narrow to marketplace listings (after search) |
+| `agentnet_discover_agents` | Narrow to agents by name or capability |
+| `agentnet_get_agent` | Get full details about a specific agent |
+| `agentnet_discover_skills` | Advanced — AI-ranked skill/plugin discovery by use case |
+| `agentnet_search_skills` | Advanced — skills.sh keyword search |
+| `agentnet_search_skillsmp` | Advanced — SkillsMP keyword search |
+| `agentnet_search_claude_plugins` | Advanced — Claude Code plugin catalog |
+| `agentnet_search_clawhub` | Advanced — ClawHub / OpenClaw catalog |
+
+Set `AGENTNET_MCP_TOOLS=core` to register only the four core tools (`search`, `discover`, `discover_agents`, `get_agent`).
 
 ## Architecture
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full layout. Summary:
+
 ```
 src/agentnet_cli/
-├── main.py              # Typer CLI entry point, registers all commands
-├── config.py            # ~/.agentnet/config.json persistence
-├── manifest.py          # Track injected files per agent for clean rollback
-├── detect.py            # Auto-detect installed agents by config dirs
-├── setup.py             # One-command browser login and guided agent setup
-├── connect.py           # Connection flow: validate auth, invoke connectors
-├── disconnect.py        # Clean removal using manifest
-├── register.py          # Browser login and CLI identity registration
-├── marketplace.py       # PlatformClient factory, JSON output helpers
-├── paths.py             # Agent enum, config roots, binary detection
-├── status.py            # Rich CLI status display
-├── updater.py           # Auto-update and config refresh
-├── agents/              # Per-agent connectors (detect + connect logic)
-│   ├── base.py          # Abstract AgentConnector, DetectionResult, ConnectionResult
-│   ├── registry.py      # AgentName -> connector factory
-│   ├── claude.py        # Claude Code connector
-│   ├── cursor.py        # Cursor IDE connector
-│   ├── copilot.py       # GitHub Copilot connector
-│   ├── vscode.py        # VS Code connector
-│   ├── codex.py         # OpenAI Codex connector
-│   ├── hermes.py        # Hermes connector (native plugin system)
-│   ├── openclaw.py      # OpenClaw connector
-│   └── shims.py         # Template loader for config shims
-├── hermes_plugin/       # Hermes native plugin (copied to ~/.hermes/plugins/)
-│   ├── __init__.py      # register(ctx) entry point
-│   ├── schemas.py       # Tool schemas in Hermes format
-│   ├── handlers.py      # Tool handlers wrapping PlatformClient
-│   ├── plugin.yaml      # Hermes plugin manifest
-│   └── skills/agentnet/SKILL.md
-├── commands/            # Marketplace subcommands (JSON output)
-│   ├── discover.py      # discover, agents
-│   ├── agent.py         # agent, hire
-│   ├── wallet.py        # wallet balance/history/topup
-│   └── session.py       # session continue/settle
-├── mcp/                 # MCP JSON-RPC server
-│   ├── server.py        # Tool definitions, request routing, stdio transport
-│   └── tools.py         # Tool handler implementations
-├── platform/            # Platform API client
-│   └── client.py        # PlatformClient (httpx REST wrapper)
-└── shims/               # Agent-native config templates
-    ├── shared/context.md
-    ├── claude/skill.md
-    ├── cursor/agent.md, agentnet.mdc
-    ├── copilot/agentnet.agent.md
-    ├── codex/skill.md
-    ├── vscode/instructions.md
-    └── SKILL.md         # Hosted skill file for curl-based agents
+├── cli/           # main.py + core commands + marketplace commands
+├── connectors/    # per-agent wiring + templates/
+├── infra/         # config, paths, manifest
+├── marketplace/   # platform client, catalogs, skills
+└── tools/         # MCP server + Hermes plugin
+
+integrations/      # Claude + OpenClaw native plugin trees (repo root)
 ```
 
 ## How It Works

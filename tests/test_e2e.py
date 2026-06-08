@@ -3,8 +3,8 @@ from unittest.mock import patch, MagicMock
 
 from typer.testing import CliRunner
 
-from agentnet_cli.main import app
-from agentnet_cli.config import save_config
+from agentnet_cli.cli.main import app
+from agentnet_cli.infra.config import save_config
 
 runner = CliRunner()
 

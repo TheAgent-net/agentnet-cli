@@ -1,5 +1,5 @@
 from pathlib import Path
-from agentnet_cli.manifest import load_manifest, record_connection, remove_connection
+from agentnet_cli.infra.manifest import load_manifest, record_connection, remove_connection
 
 
 def test_empty_manifest_when_missing(fake_home):
@@ -23,7 +23,7 @@ def test_remove_connection(fake_home):
 
 def test_load_corrupted_manifest(fake_home):
     """Corrupted manifest.json returns empty connections dict."""
-    from agentnet_cli.paths import agentnet_home
+    from agentnet_cli.infra.paths import agentnet_home
 
     manifest_path = agentnet_home() / "manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,7 +36,7 @@ def test_manifest_has_restricted_permissions(fake_home):
     """Manifest file gets 0600 permissions after save (H-4 fix)."""
     import os
     import stat as stat_mod
-    from agentnet_cli.paths import agentnet_home
+    from agentnet_cli.infra.paths import agentnet_home
 
     record_connection("claude", files_created=[], files_modified=[], mcp_entry={})
     manifest_path = agentnet_home() / "manifest.json"

@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
-from agentnet_cli.detect import detect_all
-from agentnet_cli.paths import AgentName
+from agentnet_cli.cli.core.detect import detect_all
+from agentnet_cli.infra.paths import AgentName
 
 
 def _make_agent_dir(home: Path, dot_dir: str, files: list[str]) -> None:
@@ -71,7 +71,7 @@ def test_detects_vscode_by_extensions_dir(fake_home):
 
 def test_binary_found_when_on_path(fake_home):
     _make_agent_dir(fake_home, ".claude", ["settings.json"])
-    with patch("agentnet_cli.paths.shutil.which", lambda name: "/usr/local/bin/claude" if name == "claude" else None):
+    with patch("agentnet_cli.infra.paths.shutil.which", lambda name: "/usr/local/bin/claude" if name == "claude" else None):
         results = detect_all()
     by_name = {r.agent_name: r for r in results}
     assert by_name[AgentName.CLAUDE].binary_found is True
@@ -80,7 +80,7 @@ def test_binary_found_when_on_path(fake_home):
 
 def test_binary_not_found(fake_home):
     _make_agent_dir(fake_home, ".claude", ["settings.json"])
-    with patch("agentnet_cli.paths.shutil.which", return_value=None):
+    with patch("agentnet_cli.infra.paths.shutil.which", return_value=None):
         results = detect_all()
     by_name = {r.agent_name: r for r in results}
     assert by_name[AgentName.CLAUDE].detected is True
@@ -93,9 +93,9 @@ def test_custom_path_takes_precedence(fake_home):
     custom_bin = fake_home / "custom-claude"
     custom_bin.write_text("#!/bin/sh\n")
     custom_bin.chmod(0o755)
-    from agentnet_cli.config import save_agent_path
+    from agentnet_cli.infra.config import save_agent_path
     save_agent_path("claude", str(custom_bin))
-    with patch("agentnet_cli.paths.shutil.which", return_value=None):
+    with patch("agentnet_cli.infra.paths.shutil.which", return_value=None):
         results = detect_all()
     by_name = {r.agent_name: r for r in results}
     assert by_name[AgentName.CLAUDE].binary_found is True

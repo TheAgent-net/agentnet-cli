@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from agentnet_cli.skills.skillsmp import SkillsMPClient, SkillsMPError
+from agentnet_cli.marketplace.skills.skillsmp import SkillsMPClient, SkillsMPError
 
 
 def _transport(status: int, body: dict):
@@ -16,14 +16,37 @@ def _client(status: int = 200, body: dict | None = None) -> SkillsMPClient:
     return SkillsMPClient(http_client=httpx.Client(transport=_transport(status, body)))
 
 
-class TestSearch:
+class TestPlatformSearch:
+    def test_routes_via_platform(self):
+        payload = {"data": [{"id": "s1", "name": "code-review"}]}
+        calls: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request)
+            return httpx.Response(200, json=payload)
+
+        http = httpx.Client(transport=httpx.MockTransport(handler))
+        with SkillsMPClient(
+            http_client=http,
+            platform_url="https://platform.example.com",
+            api_token="agn_test",
+        ) as client:
+            result = client.search(query="code review", sort_by="stars")
+
+        assert result["data"][0]["name"] == "code-review"
+        assert calls[0].url.host == "platform.example.com"
+        assert calls[0].url.path == "/skills/skillsmp/search"
+        assert calls[0].headers.get("authorization") == "Bearer agn_test"
+
+
+class TestDirectSearch:
     def test_happy_path(self):
         payload = {
             "data": [{"id": "s1", "name": "code-review", "author": "alice"}],
             "pagination": {"page": 1, "total": 1, "hasNext": False},
         }
         with _client(body=payload) as client:
-            result = client.search(query="code review")
+            result = client.search(query="code review")  # direct mode (no platform_url)
         assert result["data"][0]["name"] == "code-review"
 
     def test_passes_all_params(self):

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agentnet_cli.mcp.server import (
+from agentnet_cli.tools.mcp_server import (
     TOOL_DEFINITIONS,
     _error_response,
     _success_response,
@@ -60,17 +60,18 @@ def _run_server(
         env["AGENTNET_TOKEN"] = env_token
 
     with (
-        patch("agentnet_cli.mcp.server.sys.stdin", stdin),
-        patch("agentnet_cli.mcp.server.sys.stdout", stdout),
-        patch("agentnet_cli.mcp.server.load_config", return_value=mock_config),
-        patch("agentnet_cli.mcp.server.os.environ", env),
-        patch("agentnet_cli.mcp.server.ToolHandlers") as MockHandlers,
+        patch("agentnet_cli.tools.mcp_server.sys.stdin", stdin),
+        patch("agentnet_cli.tools.mcp_server.sys.stdout", stdout),
+        patch("agentnet_cli.tools.mcp_server.load_config", return_value=mock_config),
+        patch("agentnet_cli.tools.mcp_server.os.environ", env),
+        patch("agentnet_cli.tools.mcp_server.ToolHandlers") as MockHandlers,
     ):
         mock_instance = MockHandlers.return_value
 
         # Wire up all handler methods with safe defaults
         mock_instance.discover.return_value = {"results": [], "total": 0}
         mock_instance.discover_agents.return_value = {"agents": [], "total": 0}
+        mock_instance.search.return_value = {"results": [], "total": 0}
         mock_instance.get_agent.return_value = {"agent_id": "ag_1", "name": "TestBot"}
         mock_instance.use_agent.return_value = {"status": "settled", "result": "done"}
         mock_instance.continue_session.return_value = {"status": "escrowed"}
@@ -141,17 +142,13 @@ class TestToolDefinitions:
             assert "description" in defn, f"Missing 'description' in {defn}"
             assert "inputSchema" in defn, f"Missing 'inputSchema' in {defn}"
 
-    def test_all_thirteen_tools_present(self):
+    def test_all_nine_tools_present(self):
         names = {d["name"] for d in TOOL_DEFINITIONS}
         expected = {
             "agentnet_discover",
             "agentnet_discover_agents",
+            "agentnet_search",
             "agentnet_get_agent",
-            "agentnet_use_agent",
-            "agentnet_continue_session",
-            "agentnet_settle_session",
-            "agentnet_wallet",
-            "agentnet_wallet_topup",
             "agentnet_search_skills",
             "agentnet_discover_skills",
             "agentnet_search_skillsmp",
@@ -159,6 +156,9 @@ class TestToolDefinitions:
             "agentnet_search_clawhub",
         }
         assert names == expected
+
+    def test_search_tool_is_first(self):
+        assert TOOL_DEFINITIONS[0]["name"] == "agentnet_search"
 
     def test_input_schema_is_object(self):
         for defn in TOOL_DEFINITIONS:
@@ -196,10 +196,10 @@ class TestToolsList:
         responses = _run_server([req])
         assert len(responses) == 1
         tools = responses[0]["result"]["tools"]
-        assert len(tools) == 13
+        assert len(tools) == 9
         names = {t["name"] for t in tools}
         assert "agentnet_discover" in names
-        assert "agentnet_wallet" in names
+        assert "agentnet_search" in names
 
 
 class TestToolsCallValid:
@@ -262,11 +262,11 @@ class TestToolsCallRaises:
         }
 
         with (
-            patch("agentnet_cli.mcp.server.sys.stdin", stdin),
-            patch("agentnet_cli.mcp.server.sys.stdout", stdout),
-            patch("agentnet_cli.mcp.server.load_config", return_value=mock_config),
-            patch("agentnet_cli.mcp.server.os.environ", env),
-            patch("agentnet_cli.mcp.server.ToolHandlers") as MockHandlers,
+            patch("agentnet_cli.tools.mcp_server.sys.stdin", stdin),
+            patch("agentnet_cli.tools.mcp_server.sys.stdout", stdout),
+            patch("agentnet_cli.tools.mcp_server.load_config", return_value=mock_config),
+            patch("agentnet_cli.tools.mcp_server.os.environ", env),
+            patch("agentnet_cli.tools.mcp_server.ToolHandlers") as MockHandlers,
         ):
             mock_instance = MockHandlers.return_value
             mock_instance.discover.side_effect = RuntimeError("upstream down")
@@ -302,11 +302,11 @@ class TestToolsCallTypeError:
         }
 
         with (
-            patch("agentnet_cli.mcp.server.sys.stdin", stdin),
-            patch("agentnet_cli.mcp.server.sys.stdout", stdout),
-            patch("agentnet_cli.mcp.server.load_config", return_value=mock_config),
-            patch("agentnet_cli.mcp.server.os.environ", env),
-            patch("agentnet_cli.mcp.server.ToolHandlers") as MockHandlers,
+            patch("agentnet_cli.tools.mcp_server.sys.stdin", stdin),
+            patch("agentnet_cli.tools.mcp_server.sys.stdout", stdout),
+            patch("agentnet_cli.tools.mcp_server.load_config", return_value=mock_config),
+            patch("agentnet_cli.tools.mcp_server.os.environ", env),
+            patch("agentnet_cli.tools.mcp_server.ToolHandlers") as MockHandlers,
         ):
             mock_instance = MockHandlers.return_value
             mock_instance.discover.side_effect = TypeError("unexpected keyword argument 'bad'")
@@ -420,15 +420,15 @@ class TestMultipleRequests:
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "agentnet_wallet", "arguments": {"action": "balance"}},
+                "params": {"name": "agentnet_get_agent", "arguments": {"agent_id": "ag_1"}},
             }),
         ]
         responses = _run_server(lines)
         assert len(responses) == 3
         assert "protocolVersion" in responses[0]["result"]
-        assert len(responses[1]["result"]["tools"]) == 13
+        assert len(responses[1]["result"]["tools"]) == 9
         content_text = json.loads(responses[2]["result"]["content"][0]["text"])
-        assert content_text == {"balance_minor": 1000}
+        assert content_text == {"agent_id": "ag_1", "name": "TestBot"}
 
 
 class TestTokenFromEnvOnly:
@@ -474,7 +474,7 @@ class TestInvalidRequestWithoutId:
 
 
 class TestAllToolHandlers:
-    """Verify all 13 tools can be invoked successfully through serve()."""
+    """Verify all tools can be invoked successfully through serve()."""
 
     @pytest.mark.parametrize(
         "tool_name,arguments",
@@ -482,11 +482,7 @@ class TestAllToolHandlers:
             ("agentnet_discover", {"query": "test"}),
             ("agentnet_discover_agents", {"query": "bot"}),
             ("agentnet_get_agent", {"agent_id": "ag_1"}),
-            ("agentnet_use_agent", {"agent_id": "ag_1", "task": "do stuff"}),
-            ("agentnet_continue_session", {"session_id": "s1", "message": "more"}),
-            ("agentnet_settle_session", {"session_id": "s1"}),
-            ("agentnet_wallet", {"action": "balance"}),
-            ("agentnet_wallet_topup", {"amount": 10.0}),
+            ("agentnet_search", {"query": "testing"}),
             ("agentnet_search_skills", {"query": "testing"}),
             ("agentnet_discover_skills", {"use_case": "react testing"}),
             ("agentnet_search_skillsmp", {"query": "testing"}),

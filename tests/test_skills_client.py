@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from agentnet_cli.skills.client import SkillsClient, SkillsError
+from agentnet_cli.marketplace.skills.client import SkillsClient, SkillsError
 
 
 def _transport(status: int, body: dict):

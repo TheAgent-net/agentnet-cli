@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from agentnet_cli.agents.claude import ClaudeConnector
+from agentnet_cli.connectors.claude import ClaudeConnector
 
 _PLUGIN_ID = "agentnet@agentnet-cli"
 
