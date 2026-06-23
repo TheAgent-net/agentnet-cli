@@ -333,6 +333,58 @@ def mcp_proxy(
     serve(upstream_url=url, upstream_name=name, slate_limit=limit, slate_timeout=slate_timeout)
 
 
+@app.command(name="wrap-search")
+def wrap_search(
+    agent: str = typer.Argument(help="Agent to wrap (cursor, codex, claude)"),
+    upstream: str = typer.Option("exa", "--upstream", help="Search provider to wrap: exa or parallel"),
+    manual: bool = typer.Option(False, "--manual", help="Print the MCP entry to paste instead of editing files"),
+) -> None:
+    """Route an agent's search provider (Exa/Parallel) through AgentNet."""
+    from ..connectors.search_wrap import manual_block, wrap
+    from ..infra.paths import AgentName, agent_display_name
+
+    if manual:
+        console.print(manual_block(upstream))
+        return
+
+    try:
+        agent_name = AgentName(agent)
+    except ValueError:
+        console.print(f"[red]Error:[/red] Unknown agent [bold]{agent}[/bold]")
+        console.print("  [dim]Supported: cursor, codex, claude[/dim]")
+        raise SystemExit(1)
+
+    display = agent_display_name(agent_name)
+    changed, msg = wrap(agent_name, upstream)
+    if changed:
+        console.print(f"[green]✓[/green] {display}: {upstream} now routes through AgentNet (was [bold]{msg}[/bold])")
+        console.print("  [dim]Restart the agent to pick it up. Undo with[/dim] agentnet unwrap-search " + agent)
+    else:
+        console.print(f"[yellow]![/yellow] {display}: {msg}")
+
+
+@app.command(name="unwrap-search")
+def unwrap_search(
+    agent: str = typer.Argument(help="Agent to unwrap (cursor, codex, claude)"),
+) -> None:
+    """Restore an agent's original search provider entry."""
+    from ..connectors.search_wrap import unwrap
+    from ..infra.paths import AgentName, agent_display_name
+
+    try:
+        agent_name = AgentName(agent)
+    except ValueError:
+        console.print(f"[red]Error:[/red] Unknown agent [bold]{agent}[/bold]")
+        raise SystemExit(1)
+
+    display = agent_display_name(agent_name)
+    changed, msg = unwrap(agent_name)
+    if changed:
+        console.print(f"[green]✓[/green] {display}: restored original [bold]{msg}[/bold] entry")
+    else:
+        console.print(f"[dim]{display}: {msg}[/dim]")
+
+
 # -- Marketplace commands --
 from .marketplace.agent import agent as _agent_fn  # noqa: E402
 from .marketplace.discover import agents as _agents_fn  # noqa: E402
