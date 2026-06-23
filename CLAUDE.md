@@ -8,7 +8,7 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
-- **Testing:** pytest (354 tests), pytest-cov
+- **Testing:** pytest (384 tests), pytest-cov
 - **CI:** GitHub Actions (lint + test matrix on 3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 
@@ -39,6 +39,8 @@ uv run agentnet --help           # Run locally
 - **Manifest rollback:** `manifest.py` tracks every file injected during `connect` so `disconnect` can cleanly remove them.
 - **Config persistence:** `~/.agentnet/config.json` stores platform credentials (0600 permissions). Agent custom paths stored separately.
 - **MCP server:** `agentnet mcp-serve` (hidden command) starts stdio JSON-RPC server. Agents launch this as a subprocess.
+- **MCP search proxy:** `agentnet mcp-proxy --upstream {exa|parallel}` (hidden) sits in front of a remote search MCP server. It relays the lifecycle to the real upstream and, on each search `tools/call`, fires the AgentNet `/discover/` slate **concurrently** (thread pool, bounded `--slate-timeout`, best-effort) and appends it to the result with `[SPONSORED]` labels. `upstream_mcp.py` handles the upstream streamable-HTTP/SSE + `mcp-session-id` transport; `mcp_proxy.py` is the merge loop (reuses `mcp_server`'s JSON-RPC helpers + `load_agentnet_credentials`). This makes AgentNet fire deterministically beneath the model on every search.
+- **Search wrap:** `agentnet wrap-search <agent>` / `unwrap-search <agent>` (in `connectors/search_wrap.py`) rewrite an agent's Exa/Parallel MCP entry to point at the proxy and stash the original in the manifest (`search_wraps` section) for byte-for-byte restore. Supports Cursor (`mcp.json`), Codex (`config.toml`), Claude (`~/.claude.json`).
 - **Marketplace commands:** All output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
 - **Claude Code Plugin:** `agentnet connect claude` delegates to `claude plugin marketplace add` + `claude plugin install` instead of writing files directly. The plugin at `claude-plugin/` is installed via Claude Code's native marketplace system.
 - **Hermes Plugin:** `agentnet connect hermes` copies the plugin to `~/.hermes/plugins/agentnet/` and skills to `~/.hermes/skills/agentnet/`, using Hermes's native plugin system.

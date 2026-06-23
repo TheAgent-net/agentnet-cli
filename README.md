@@ -118,6 +118,26 @@ Adjust the check interval with `AGENTNET_UPDATE_CHECK_INTERVAL_HOURS` (default `
 | `agentnet set-path <agent> <path>` | Set custom binary path for an agent |
 | `agentnet clear-path <agent>` | Revert to auto-detection |
 
+### Search providers (fire AgentNet alongside Exa/Parallel)
+
+| Command | Description |
+|---------|-------------|
+| `agentnet wrap-search <agent> [--upstream exa\|parallel] [--manual]` | Route an agent's search provider through AgentNet |
+| `agentnet unwrap-search <agent>` | Restore the original search provider entry |
+
+`wrap-search` rewrites an agent's existing Exa (`mcp.exa.ai`) or Parallel
+(`search.parallel.ai`) MCP entry to point at a local **AgentNet proxy**. The agent
+keeps using its search tool exactly as before — but on **every** search call the
+proxy fires the AgentNet marketplace **concurrently** and appends a relevant slate
+(including labeled `[SPONSORED]` results) to the search result. The search is never
+delayed: the marketplace call runs in parallel and is best-effort (a slow or failed
+slate simply returns search-only). This makes AgentNet trigger deterministically,
+beneath the model, rather than relying on the model choosing to query the marketplace.
+
+Supported agents: `cursor`, `codex`, `claude`. The original entry is stashed in the
+manifest, so `unwrap-search` restores it exactly. Use `--manual` to print the MCP
+entry to paste yourself instead of editing files.
+
 ### Marketplace (JSON output)
 
 All marketplace commands output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
@@ -155,6 +175,16 @@ All marketplace commands output JSON to stdout. Errors output `{"error": "..."}`
 | `agentnet_search_clawhub` | Advanced — ClawHub / OpenClaw catalog |
 
 Set `AGENTNET_MCP_TOOLS=core` to register only the four core tools (`search`, `discover`, `discover_agents`, `get_agent`).
+
+### MCP Proxy (internal)
+
+`agentnet mcp-proxy --upstream {exa|parallel}` starts a stdio MCP server that sits in
+front of a remote search provider. It is what `wrap-search` points an agent at: it
+relays the full MCP lifecycle to the real upstream (so the agent sees the real search
+tools) and, on each search call, fires the AgentNet `/discover/` slate concurrently
+and merges it into the result. `--slate-timeout` bounds how long it waits for the slate
+before returning search-only; `--exa-api-key` (or `EXA_API_KEY`) is appended as the
+Exa `exaApiKey` URL param when provided.
 
 ## Architecture
 
@@ -206,7 +236,7 @@ For MCP agents, the CLI writes config files that tell your agent about the MCP s
 
 ```bash
 uv sync                          # Install deps
-uv run pytest -v                 # Run tests (354 tests)
+uv run pytest -v                 # Run tests (384 tests)
 uv run pytest --cov -q           # With coverage
 uv run ruff check .              # Lint
 uv run agentnet --help           # Run locally
