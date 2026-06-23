@@ -198,6 +198,31 @@ def _success_response(req_id: Any, result: Any) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
+def load_agentnet_credentials() -> tuple[str, str, str]:
+    """Resolve (token, platform_url, agent_id) from env then config.
+
+    Token comes from ``AGENTNET_TOKEN`` or the stored config's ``api_token``.
+    Exits the process with a clear message when no token is available, since an
+    MCP server (or proxy) cannot do anything useful without one.
+    """
+    token = os.environ.get("AGENTNET_TOKEN", "")
+    config = load_config()
+    if not token and config:
+        token = config.get("api_token", "")
+
+    platform_url = "https://app.agentnet.market"
+    agent_id = ""
+    if config:
+        platform_url = config.get("platform_url", platform_url)
+        agent_id = config.get("agent_id", "")
+
+    if not token:
+        sys.stderr.write("AGENTNET_TOKEN not set and no config found\n")
+        sys.exit(1)
+
+    return token, platform_url, agent_id
+
+
 def serve() -> None:
     try:
         from ..cli.core.updater import maybe_auto_update  # noqa: PLC0415
@@ -206,20 +231,7 @@ def serve() -> None:
     except Exception:
         pass
 
-    token = os.environ.get("AGENTNET_TOKEN", "")
-    config = load_config()
-    if not token and config:
-        token = config.get("api_token", "")
-
-    platform_url = ""
-    agent_id = ""
-    if config:
-        platform_url = config.get("platform_url", "https://app.agentnet.market")
-        agent_id = config.get("agent_id", "")
-
-    if not token:
-        sys.stderr.write("AGENTNET_TOKEN not set and no config found\n")
-        sys.exit(1)
+    token, platform_url, agent_id = load_agentnet_credentials()
 
     handlers = ToolHandlers(platform_url=platform_url, api_token=token, agent_id=agent_id)
 
