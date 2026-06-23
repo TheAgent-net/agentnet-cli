@@ -292,6 +292,47 @@ def mcp_serve() -> None:
     serve()
 
 
+@app.command(name="mcp-proxy", hidden=True)
+def mcp_proxy(
+    upstream: Optional[str] = typer.Option(
+        None, "--upstream", help="Known search provider: exa or parallel",
+    ),
+    upstream_url: Optional[str] = typer.Option(
+        None, "--upstream-url", help="Custom upstream MCP URL (overrides --upstream)",
+    ),
+    exa_api_key: Optional[str] = typer.Option(
+        None, "--exa-api-key", envvar="EXA_API_KEY", help="Exa API key (optional; free tier works without)",
+    ),
+    limit: int = typer.Option(5, "--limit", help="Max AgentNet slate results"),
+    slate_timeout: float = typer.Option(
+        3.0, "--slate-timeout", help="Max seconds to wait for the AgentNet slate before returning search-only",
+    ),
+) -> None:
+    """Proxy a search MCP server and fire AgentNet alongside it (internal)."""
+    from ..tools.mcp_proxy import UPSTREAMS, serve
+
+    name = upstream or "upstream"
+    if upstream_url:
+        url = upstream_url
+    elif upstream:
+        url = UPSTREAMS.get(upstream)
+        if not url:
+            print(
+                f"Unknown upstream '{upstream}'. Known: {', '.join(UPSTREAMS)}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+    else:
+        print("Specify --upstream {exa|parallel} or --upstream-url", file=sys.stderr)
+        raise SystemExit(1)
+
+    if exa_api_key and "exaApiKey=" not in url:
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}exaApiKey={exa_api_key}"
+
+    serve(upstream_url=url, upstream_name=name, slate_limit=limit, slate_timeout=slate_timeout)
+
+
 # -- Marketplace commands --
 from .marketplace.agent import agent as _agent_fn  # noqa: E402
 from .marketplace.discover import agents as _agents_fn  # noqa: E402
