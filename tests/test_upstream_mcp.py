@@ -143,6 +143,36 @@ def test_session_expiry_reinitializes_and_retries():
     assert state["init_count"] == 2  # initial + one re-init after the 409
 
 
+def test_400_does_not_trigger_reinit():
+    # A 400 (bad request) is a real error, not session expiry — re-initializing
+    # would just replay the same failure. The client must surface it, not retry.
+    state = {"init_count": 0, "call_count": 0}
+
+    def handler_400(req: httpx.Request) -> httpx.Response:
+        import json
+
+        method = json.loads(req.content).get("method")
+        if method == "initialize":
+            state["init_count"] += 1
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream", "mcp-session-id": "sess-1"},
+                text='event: message\ndata: {"id":1,"result":{}}\n\n',
+            )
+        if method == "tools/call":
+            state["call_count"] += 1
+            return httpx.Response(400, text="bad request")
+        return httpx.Response(202, text="")
+
+    up = _client(httpx.MockTransport(handler_400))
+    up.initialize({"capabilities": {}})
+    with pytest.raises(UpstreamMCPError):
+        up.request("tools/call", {"name": "web_search_exa", "arguments": {}}, req_id=3)
+
+    assert state["init_count"] == 1  # NO re-init on 400
+    assert state["call_count"] == 1  # call made once, not retried
+
+
 def test_network_error_raises_upstream_error():
     def handler(req: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("boom")

@@ -125,15 +125,21 @@ class UpstreamMCP:
         self._notify({"jsonrpc": "2.0", "method": "notifications/initialized"})
         return envelope
 
+    # Statuses that reliably signal an expired/unknown session in the MCP
+    # streamable-HTTP transport. 400/404 are NOT included: re-initializing on a
+    # bad payload (400) or wrong URL (404) would just replay the same failure and
+    # mask the real misconfiguration behind an extra round-trip.
+    _SESSION_EXPIRY_STATUSES = frozenset({409, 410})
+
     def request(self, method: str, params: dict[str, Any], req_id: Any) -> dict[str, Any]:
         """Send a JSON-RPC request and return the parsed response envelope.
 
-        On a session error (the upstream lost our session), re-initialize once
-        with a minimal handshake and retry the call a single time.
+        On a session-expiry response (the upstream lost our session), re-initialize
+        once with a minimal handshake and retry the call a single time.
         """
         payload = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}
         resp = self._post(payload)
-        if resp.status_code in (400, 404, 409) and self._session_id is not None:
+        if resp.status_code in self._SESSION_EXPIRY_STATUSES and self._session_id is not None:
             self._session_id = None
             self.initialize(
                 {

@@ -327,8 +327,10 @@ def mcp_proxy(
         raise SystemExit(1)
 
     if exa_api_key and "exaApiKey=" not in url:
+        from urllib.parse import quote
+
         sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}exaApiKey={exa_api_key}"
+        url = f"{url}{sep}exaApiKey={quote(exa_api_key, safe='')}"
 
     serve(upstream_url=url, upstream_name=name, slate_limit=limit, slate_timeout=slate_timeout)
 
@@ -343,16 +345,16 @@ def wrap_search(
     from ..connectors.search_wrap import manual_block, wrap
     from ..infra.paths import AgentName, agent_display_name
 
-    if manual:
-        console.print(manual_block(upstream))
-        return
-
     try:
         agent_name = AgentName(agent)
     except ValueError:
         console.print(f"[red]Error:[/red] Unknown agent [bold]{agent}[/bold]")
         console.print("  [dim]Supported: cursor, codex, claude[/dim]")
         raise SystemExit(1)
+
+    if manual:
+        console.print(manual_block(upstream, agent_name))
+        return
 
     display = agent_display_name(agent_name)
     changed, msg = wrap(agent_name, upstream)
