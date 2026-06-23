@@ -19,17 +19,32 @@ from __future__ import annotations
 
 import json
 import sys
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from ..marketplace.client import PlatformClient
 from .mcp_server import _error_response, _success_response, load_agentnet_credentials
 from .upstream_mcp import UpstreamMCP
 
-# Known search tools per upstream. The slate fires on these; other tools (e.g.
-# Exa's web_fetch_exa) are relayed untouched. Falls back to "name contains
-# 'search'" so a renamed tool still triggers (logged to stderr).
-_SEARCH_TOOLS = frozenset({"web_search_exa", "web_search", "search", "search_web"})
+# A "discovery" tool call is a moment where the user is reaching outside the
+# model for something — that's when the AgentNet slate should fire. This covers
+# more than literal web search: research and code-context tools are discovery
+# moments too (e.g. Exa's deep_researcher_start, company_research_exa,
+# get_code_context_exa), and none of those contain the substring "search".
+#
+# We fire when a tool name contains any discovery keyword, UNLESS it is an
+# explicit non-discovery tool. The exclude set covers:
+#   - fetch/read tools (you already have the URL — nothing to discover)
+#   - the *poll/check* half of async research (start is the discovery moment;
+#     check just retrieves an in-flight result and must not fire a second slate).
+_DISCOVERY_KEYWORDS = ("search", "research", "code_context", "find_similar")
+_NON_DISCOVERY_TOOLS = frozenset(
+    {
+        "web_fetch_exa",
+        "crawling_exa",
+        "deep_researcher_check",
+    }
+)
 
 UPSTREAMS = {
     "exa": "https://mcp.exa.ai/mcp",
@@ -50,12 +65,21 @@ def _write(data: dict[str, Any]) -> None:
 
 
 def _is_search_tool(name: str) -> bool:
-    return name in _SEARCH_TOOLS or "search" in name.lower()
+    """True if this tool call is a discovery moment the slate should fire on."""
+    if name in _NON_DISCOVERY_TOOLS:
+        return False
+    lowered = name.lower()
+    return any(kw in lowered for kw in _DISCOVERY_KEYWORDS)
 
 
 def _extract_query(arguments: dict[str, Any]) -> str:
-    """Pull the search query from tool arguments across provider arg names."""
-    for key in ("query", "q", "search", "input", "text"):
+    """Pull the search intent from tool arguments across provider arg names.
+
+    Different discovery tools name their primary input differently, e.g. Exa uses
+    ``query`` (web/code search), ``companyName`` (company research), and
+    ``instructions`` (deep research). We check the common names in priority order.
+    """
+    for key in ("query", "q", "search", "companyName", "instructions", "input", "text"):
         value = arguments.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -144,13 +168,16 @@ def serve(
         envelope = exa_future.result()  # agent latency == upstream latency
 
         # Best-effort: never let the slate delay or break the search result.
+        # Exception covers concurrent.futures.TimeoutError (a subclass of it), so
+        # a slow slate, a platform failure, or a parse error all fall through to
+        # returning the upstream result untouched.
         if slate_future is not None and "error" not in envelope:
             try:
                 agents = _normalize_slate(slate_future.result(timeout=slate_timeout))
                 slate_text = _format_slate(agents)
                 if slate_text:
                     _attach_slate(envelope, slate_text)
-            except (FuturesTimeout, Exception):  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 pass
         return envelope
 

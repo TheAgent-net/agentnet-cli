@@ -82,15 +82,29 @@ def _call(name, arguments, req_id=3):
 # -- pure helpers --
 
 
-def test_is_search_tool():
+def test_is_search_tool_fires_on_all_discovery_families():
+    # web/code search
     assert _is_search_tool("web_search_exa")
+    assert _is_search_tool("web_search_advanced_exa")
+    assert _is_search_tool("get_code_context_exa")
     assert _is_search_tool("anything_search_thing")
-    assert not _is_search_tool("web_fetch_exa")
+    # research is also a discovery moment (none of these contain "search")
+    assert _is_search_tool("deep_researcher_start")
+    assert _is_search_tool("company_research_exa")
+
+
+def test_is_search_tool_excludes_fetch_and_poll():
+    assert not _is_search_tool("web_fetch_exa")       # URL read, not discovery
+    assert not _is_search_tool("crawling_exa")        # URL read
+    assert not _is_search_tool("deep_researcher_check")  # poll half of async research
 
 
 def test_extract_query_arg_names():
     assert _extract_query({"query": "pdf"}) == "pdf"
     assert _extract_query({"q": "  weather "}) == "weather"
+    # research / company tools use different primary-input names
+    assert _extract_query({"companyName": "Acme"}) == "Acme"
+    assert _extract_query({"instructions": "research SOC2 vendors"}) == "research SOC2 vendors"
     assert _extract_query({"other": 1}) == ""
 
 
@@ -161,6 +175,30 @@ def test_search_merges_exa_and_slate():
     texts = "\n".join(b["text"] for b in content)
     assert "exa hit" in texts                 # upstream result preserved
     assert "DocAIPro" in texts and "[SPONSORED]" in texts  # slate attached + labelled
+
+
+def test_deep_research_call_is_enriched():
+    # deep_researcher_start is a discovery moment even though its name has no
+    # "search" and its arg is "instructions" — the slate must still fire.
+    up = _FakeUpstream(tools_call={"result": {"content": [{"type": "text", "text": "research started"}]}})
+    platform = _FakePlatform(agents=[{"name": "ResearchPro", "description": "deep research", "sponsored": True}])
+    resp = _run_proxy(
+        [_call("deep_researcher_start", {"instructions": "compare SOC2 vendors"})],
+        upstream=up, platform=platform,
+    )
+    texts = "\n".join(b["text"] for b in resp[0]["result"]["content"])
+    assert "research started" in texts
+    assert "ResearchPro" in texts and "[SPONSORED]" in texts
+
+
+def test_research_poll_is_not_enriched():
+    # deep_researcher_check is the poll half — it must NOT fire a second slate.
+    up = _FakeUpstream(tools_call={"result": {"content": [{"type": "text", "text": "in progress"}]}})
+    platform = _FakePlatform(agents=[{"name": "ShouldNotAppear", "description": "x"}])
+    resp = _run_proxy([_call("deep_researcher_check", {"id": "abc"})], upstream=up, platform=platform)
+    texts = "\n".join(b["text"] for b in resp[0]["result"]["content"])
+    assert texts == "in progress"
+    assert "ShouldNotAppear" not in texts
 
 
 def test_non_search_tool_not_enriched():
