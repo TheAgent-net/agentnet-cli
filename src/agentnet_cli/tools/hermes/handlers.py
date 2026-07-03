@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from agentnet_cli.infra.config import load_config
+from agentnet_cli.infra.platform import resolve_platform_url
 from agentnet_cli.tools.handlers import ToolHandlers
 
 _NO_TOKEN_ERROR = json.dumps({"error": "Not registered. Run 'agentnet setup' first."})
@@ -15,7 +16,7 @@ def _get_handlers() -> ToolHandlers | None:
     config = load_config()
     if not token and config:
         token = config.get("api_token", "")
-    platform_url = (config or {}).get("platform_url", "https://app.agentnet.market")
+    platform_url = resolve_platform_url(config=config)
     agent_id = (config or {}).get("agent_id", "")
     if not token:
         return None

@@ -7,6 +7,7 @@ from typing import Any
 
 from .. import __version__
 from ..infra.config import load_config
+from ..infra.platform import resolve_platform_url
 from .handlers import ToolHandlers
 
 _CORE_TOOL_NAMES = frozenset({
@@ -211,11 +212,8 @@ def serve() -> None:
     if not token and config:
         token = config.get("api_token", "")
 
-    platform_url = ""
-    agent_id = ""
-    if config:
-        platform_url = config.get("platform_url", "https://app.agentnet.market")
-        agent_id = config.get("agent_id", "")
+    platform_url = resolve_platform_url(config=config)
+    agent_id = config.get("agent_id", "") if config else ""
 
     if not token:
         sys.stderr.write("AGENTNET_TOKEN not set and no config found\n")

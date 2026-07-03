@@ -6,6 +6,7 @@ from typing import Any
 import typer
 
 from ...infra.config import load_config
+from ...infra.platform import resolve_platform_url
 from ...marketplace.auth import die, output
 from ...marketplace.client import PlatformClient, PlatformError
 from ...marketplace.catalogs.claude_marketplace import ClaudeMarketplaceClient, ClaudeMarketplaceError
@@ -24,17 +25,15 @@ def _platform_client() -> PlatformClient | None:
     if not token:
         return None
 
-    platform_url = os.environ.get("AGENTNET_PLATFORM_URL", "") or config.get(
-        "platform_url", "https://app.agentnet.market",
-    )
+    platform_url = resolve_platform_url(config=config)
     return PlatformClient(base_url=platform_url, api_token=token)
 
 
 def _skill_search(query: str, limit: int) -> dict[str, Any]:
     config = load_config() or {}
     with SkillDiscovery(
-        platform_url=config.get("platform_url"),
-        api_token=config.get("api_token"),
+        platform_url=resolve_platform_url(config=config),
+        api_token=config.get("api_token") or os.environ.get("AGENTNET_TOKEN", ""),
         openai_api_key=os.environ.get("OPENAI_API_KEY") or None,
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY") or None,
     ) as disco:

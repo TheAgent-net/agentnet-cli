@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from ..infra.package_paths import bundled_openclaw_plugin
