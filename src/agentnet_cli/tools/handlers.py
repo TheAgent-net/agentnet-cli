@@ -111,18 +111,6 @@ class ToolHandlers:
     def settle_session(self, *, session_id: str) -> dict[str, Any]:
         return self._client.settle_session(session_id=session_id)
 
-    def wallet(self, *, action: str, limit: int = 50) -> dict[str, Any]:
-        if action not in ("balance", "history"):
-            raise ValueError("Invalid action: must be 'balance' or 'history'")
-        if action == "balance":
-            return self._client.wallet_balance(agent_id=self._agent_id)
-        return self._client.wallet_history(agent_id=self._agent_id, limit=limit)
-
-    def wallet_topup(self, *, amount: float) -> dict[str, Any]:
-        if amount <= 0 or amount > 10000:
-            raise ValueError("amount must be between 0 (exclusive) and 10000")
-        return self._client.wallet_topup(agent_id=self._agent_id, amount=amount)
-
     def search_skills(
         self,
         *,

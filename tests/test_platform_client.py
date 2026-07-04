@@ -44,19 +44,6 @@ def test_search_endpoint():
     assert result["query"] == "translation"
 
 
-def test_wallet_balance(mock_transport):
-    transport = httpx.MockTransport(
-        lambda req: httpx.Response(200, json={"balance_minor": 1000, "currency": "INR"})
-    )
-    c = PlatformClient(
-        base_url="https://test.agentnet.market",
-        api_token="agn_test",
-        http_client=httpx.Client(transport=transport),
-    )
-    result = c.wallet_balance(agent_id="agent_123")
-    assert result["balance_minor"] == 1000
-
-
 def test_auth_header_sent():
     def check_auth(req: httpx.Request) -> httpx.Response:
         assert req.headers["authorization"] == "Bearer agn_test"
@@ -162,13 +149,6 @@ def test_get_agent_validates_id():
         c.get_agent(agent_id="../admin")
 
 
-def test_wallet_balance_validates_id():
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={}))
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Invalid identifier"):
-        c.wallet_balance(agent_id="foo/bar")
-
-
 # --- context manager & close ---
 
 
@@ -202,7 +182,7 @@ def test_user_agent_header():
     c.discover(query="test")
 
 
-# --- endpoint verification for use_agent, continue_session, settle_session, wallet_topup, discover_agents ---
+# --- endpoint verification for use_agent, continue_session, settle_session, get_skill, discover_agents ---
 
 
 def test_use_agent():
@@ -242,18 +222,31 @@ def test_settle_session():
     assert result["settled"] is True
 
 
-def test_wallet_topup():
+def test_get_skill():
     def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/wallet/agt_1/topup"
-        assert req.method == "POST"
-        import json
-        body = json.loads(req.content)
-        assert body["amount"] == 100.0
-        return httpx.Response(200, json={"new_balance": 200})
+        assert req.url.path == "/discover/skills/org/react-testing"
+        assert req.method == "GET"
+        return httpx.Response(200, json={"id": "org/react-testing", "content": "..."})
 
     c = _make_client(httpx.MockTransport(handler))
-    result = c.wallet_topup(agent_id="agt_1", amount=100.0)
-    assert result["new_balance"] == 200
+    result = c.get_skill(skill_id="skill:org/react-testing")
+    assert result["id"] == "org/react-testing"
+
+
+def test_get_skill_strips_bare_id():
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/discover/skills/org/react-testing"
+        return httpx.Response(200, json={"id": "org/react-testing"})
+
+    c = _make_client(httpx.MockTransport(handler))
+    c.get_skill(skill_id="org/react-testing")
+
+
+def test_get_skill_validates_id():
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={}))
+    c = _make_client(transport)
+    with pytest.raises(PlatformError, match="Invalid identifier"):
+        c.get_skill(skill_id="../admin")
 
 
 def test_discover_agents():
