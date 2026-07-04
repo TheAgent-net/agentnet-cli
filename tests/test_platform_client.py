@@ -249,6 +249,24 @@ def test_get_skill_validates_id():
         c.get_skill(skill_id="../admin")
 
 
+@pytest.mark.parametrize(
+    "skill_id",
+    [
+        "skill:/org/react-testing",
+        "skill:org//react-testing",
+        "skill:./org/react-testing",
+        "skill:org/react-testing/",
+        "skill:org/./react-testing",
+        "skill:org/../react-testing",
+    ],
+)
+def test_get_skill_rejects_ambiguous_path_segments(skill_id):
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={}))
+    c = _make_client(transport)
+    with pytest.raises(PlatformError, match="Invalid identifier"):
+        c.get_skill(skill_id=skill_id)
+
+
 def test_discover_agents():
     def handler(req: httpx.Request) -> httpx.Response:
         assert req.url.path == "/discover/"

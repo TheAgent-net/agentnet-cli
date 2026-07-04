@@ -27,6 +27,21 @@ def test_discover_happy_path(mock_gc, fake_home):
 
 
 @patch("agentnet_cli.cli.marketplace.discover.get_client")
+def test_discover_returns_skills_alongside_agents(mock_gc, fake_home):
+    mock_gc.return_value = _mock_client(
+        discover_agents={
+            "agents": [{"name": "CodeBot", "id": "cb-1"}],
+            "skills": [{"id": "org/react-testing", "summary": "CI/CD for React apps"}],
+        }
+    )
+    result = runner.invoke(app, ["discover", "react testing"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["skills"][0]["id"] == "org/react-testing"
+    assert data["agents"][0]["id"] == "cb-1"
+
+
+@patch("agentnet_cli.cli.marketplace.discover.get_client")
 def test_discover_with_limit(mock_gc, fake_home):
     mock_gc.return_value = _mock_client(discover_agents={"agents": []})
     result = runner.invoke(app, ["discover", "weather", "--limit", "3"])

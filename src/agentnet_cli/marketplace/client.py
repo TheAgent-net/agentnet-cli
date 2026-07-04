@@ -16,6 +16,16 @@ def _validate_path_segment(value: str) -> None:
         raise PlatformError(f"Invalid identifier: {value!r}")
 
 
+def _validate_skill_path(value: str) -> None:
+    """Reject skill IDs with leading/trailing/empty/dot path segments."""
+    segments = value.split("/")
+    if not value or value.startswith("/") or value.endswith("/"):
+        raise PlatformError(f"Invalid identifier: {value!r}")
+    for segment in segments:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", segment):
+            raise PlatformError(f"Invalid identifier: {value!r}")
+
+
 class PlatformClient:
     def __init__(
         self,
@@ -143,8 +153,7 @@ class PlatformClient:
 
     def get_skill(self, *, skill_id: str) -> dict[str, Any]:
         normalized = skill_id.removeprefix("skill:")
-        if ".." in normalized or not re.fullmatch(r"[a-zA-Z0-9_./-]+", normalized):
-            raise PlatformError(f"Invalid identifier: {skill_id!r}")
+        _validate_skill_path(normalized)
         return self._get(f"/discover/skills/{normalized}")
 
     def list_agents(self) -> dict[str, Any]:
