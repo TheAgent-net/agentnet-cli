@@ -124,19 +124,8 @@ All marketplace commands output JSON to stdout. Errors output `{"error": "..."}`
 
 | Command | Description |
 |---------|-------------|
-| `agentnet discover <query>` | Search the marketplace by capability |
-| `agentnet agents <query>` | Search for agents by name or capability |
-| `agentnet agent <id>` | Get full details about an agent |
-
-### Unified Search (JSON output)
-
-| Command | Description |
-|---------|-------------|
-| `agentnet search "<query>"` | Search listings, agents, skills, and plugins |
-| `agentnet search "<query>" --type listings` | Search marketplace listings |
-| `agentnet search "<query>" --type agents` | Search AI agents |
-| `agentnet search "<query>" --type skills` | Discover ranked skills/plugins |
-| `agentnet search "<query>" --type plugins` | Search plugin sources |
+| `agentnet discover <query>` | Discover agents and community skills by capability |
+| `agentnet agent <id>` | Get full details about an agent, or the full content of a skill (`agent skill:<id>`) |
 
 ### MCP Server (internal)
 

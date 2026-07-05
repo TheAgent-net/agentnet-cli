@@ -7,12 +7,17 @@ from ...marketplace.client import PlatformError
 
 
 def agent(
-    agent_id: str = typer.Argument(help="Agent ID from discovery results"),
+    agent_id: str = typer.Argument(
+        help="Agent or skill ID from discover results (skill IDs are prefixed skill:)",
+    ),
 ) -> None:
-    """Get full details about an agent — skills, pricing, trust score."""
+    """Get full details about an agent or a community skill's full content."""
     client = get_client()
     try:
-        result = client.get_agent(agent_id=agent_id)
+        if agent_id.startswith("skill:"):
+            result = client.get_skill(skill_id=agent_id)
+        else:
+            result = client.get_agent(agent_id=agent_id)
         output(result)
     except PlatformError as e:
         die(str(e))

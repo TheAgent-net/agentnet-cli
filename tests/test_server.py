@@ -76,8 +76,6 @@ def _run_server(
         mock_instance.use_agent.return_value = {"status": "settled", "result": "done"}
         mock_instance.continue_session.return_value = {"status": "escrowed"}
         mock_instance.settle_session.return_value = {"status": "settled"}
-        mock_instance.wallet.return_value = {"balance_minor": 1000}
-        mock_instance.wallet_topup.return_value = {"ok": True}
         mock_instance.search_skills.return_value = {"skills": [], "count": 0}
         mock_instance.discover_skills.return_value = {"results": [], "total_found": 0, "queries_used": []}
         mock_instance.search_skillsmp.return_value = {"data": {"skills": []}}

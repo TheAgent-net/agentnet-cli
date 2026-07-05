@@ -16,6 +16,16 @@ def _validate_path_segment(value: str) -> None:
         raise PlatformError(f"Invalid identifier: {value!r}")
 
 
+def _validate_skill_path(value: str) -> None:
+    """Reject skill IDs with leading/trailing/empty/dot path segments."""
+    segments = value.split("/")
+    if not value or value.startswith("/") or value.endswith("/"):
+        raise PlatformError(f"Invalid identifier: {value!r}")
+    for segment in segments:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", segment):
+            raise PlatformError(f"Invalid identifier: {value!r}")
+
+
 class PlatformClient:
     def __init__(
         self,
@@ -141,6 +151,11 @@ class PlatformClient:
         _validate_path_segment(agent_id)
         return self._get(f"/agents/{agent_id}")
 
+    def get_skill(self, *, skill_id: str) -> dict[str, Any]:
+        normalized = skill_id.removeprefix("skill:")
+        _validate_skill_path(normalized)
+        return self._get(f"/discover/skills/{normalized}")
+
     def list_agents(self) -> dict[str, Any]:
         return self._get("/agents/")
 
@@ -154,18 +169,6 @@ class PlatformClient:
 
     def settle_session(self, *, session_id: str) -> dict[str, Any]:
         return self._post(f"/agents/sessions/{session_id}/settle", {})
-
-    def wallet_balance(self, *, agent_id: str) -> dict[str, Any]:
-        _validate_path_segment(agent_id)
-        return self._get(f"/wallet/{agent_id}")
-
-    def wallet_history(self, *, agent_id: str, limit: int = 50) -> dict[str, Any]:
-        _validate_path_segment(agent_id)
-        return self._get(f"/wallet/{agent_id}/history", {"limit": limit})
-
-    def wallet_topup(self, *, agent_id: str, amount: float) -> dict[str, Any]:
-        _validate_path_segment(agent_id)
-        return self._post(f"/wallet/{agent_id}/topup", {"amount": amount})
 
     def verify_token(self) -> dict[str, Any]:
         return self._get("/auth/me")

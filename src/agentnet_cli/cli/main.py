@@ -303,11 +303,7 @@ def mcp_serve() -> None:
 
 # -- Marketplace commands --
 from .marketplace.agent import agent as _agent_fn  # noqa: E402
-from .marketplace.discover import agents as _agents_fn  # noqa: E402
 from .marketplace.discover import discover as _discover_fn  # noqa: E402
-from .marketplace.search import search as _search_fn  # noqa: E402
 
-app.command(name="search")(_search_fn)
 app.command(name="discover")(_discover_fn)
-app.command(name="agents")(_agents_fn)
 app.command(name="agent")(_agent_fn)

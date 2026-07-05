@@ -18,22 +18,35 @@ def _mock_client(**method_returns):
 @patch("agentnet_cli.cli.marketplace.discover.get_client")
 def test_discover_happy_path(mock_gc, fake_home):
     mock_gc.return_value = _mock_client(
-        discover={"listings": [{"name": "WeatherBot", "price": 1.0}]}
+        discover_agents={"agents": [{"name": "CodeBot", "id": "cb-1"}]}
     )
-    result = runner.invoke(app, ["discover", "weather"])
+    result = runner.invoke(app, ["discover", "code review"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "listings" in data
+    assert "agents" in data
 
 
 @patch("agentnet_cli.cli.marketplace.discover.get_client")
-def test_discover_with_options(mock_gc, fake_home):
-    mock_gc.return_value = _mock_client(discover={"listings": []})
-    result = runner.invoke(app, ["discover", "food", "--category", "delivery", "--limit", "5", "--max-price", "10"])
-    assert result.exit_code == 0
-    mock_gc.return_value.discover.assert_called_once_with(
-        query="food", category="delivery", max_results=5, max_price=10,
+def test_discover_returns_skills_alongside_agents(mock_gc, fake_home):
+    mock_gc.return_value = _mock_client(
+        discover_agents={
+            "agents": [{"name": "CodeBot", "id": "cb-1"}],
+            "skills": [{"id": "org/react-testing", "summary": "CI/CD for React apps"}],
+        }
     )
+    result = runner.invoke(app, ["discover", "react testing"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["skills"][0]["id"] == "org/react-testing"
+    assert data["agents"][0]["id"] == "cb-1"
+
+
+@patch("agentnet_cli.cli.marketplace.discover.get_client")
+def test_discover_with_limit(mock_gc, fake_home):
+    mock_gc.return_value = _mock_client(discover_agents={"agents": []})
+    result = runner.invoke(app, ["discover", "weather", "--limit", "3"])
+    assert result.exit_code == 0
+    mock_gc.return_value.discover_agents.assert_called_once_with(query="weather", limit=3)
 
 
 @patch("agentnet_cli.cli.marketplace.discover.get_client")
@@ -41,11 +54,11 @@ def test_discover_platform_error(mock_gc, fake_home):
     from agentnet_cli.marketplace.client import PlatformError
 
     mock_gc.return_value = _mock_client()
-    mock_gc.return_value.discover.side_effect = PlatformError("Rate limited, try again later")
+    mock_gc.return_value.discover_agents.side_effect = PlatformError("Platform server error")
     result = runner.invoke(app, ["discover", "weather"])
     assert result.exit_code == 1
     data = json.loads(result.stdout)
-    assert data["error"] == "Rate limited, try again later"
+    assert data["error"] == "Platform server error"
 
 
 def test_discover_no_auth(fake_home):
@@ -53,34 +66,3 @@ def test_discover_no_auth(fake_home):
     assert result.exit_code == 1
     data = json.loads(result.stdout)
     assert "Not authenticated" in data["error"]
-
-
-@patch("agentnet_cli.cli.marketplace.discover.get_client")
-def test_agents_happy_path(mock_gc, fake_home):
-    mock_gc.return_value = _mock_client(
-        discover_agents={"agents": [{"name": "CodeBot", "id": "cb-1"}]}
-    )
-    result = runner.invoke(app, ["agents", "code review"])
-    assert result.exit_code == 0
-    data = json.loads(result.stdout)
-    assert "agents" in data
-
-
-@patch("agentnet_cli.cli.marketplace.discover.get_client")
-def test_agents_with_limit(mock_gc, fake_home):
-    mock_gc.return_value = _mock_client(discover_agents={"agents": []})
-    result = runner.invoke(app, ["agents", "weather", "--limit", "3"])
-    assert result.exit_code == 0
-    mock_gc.return_value.discover_agents.assert_called_once_with(query="weather", limit=3)
-
-
-@patch("agentnet_cli.cli.marketplace.discover.get_client")
-def test_agents_platform_error(mock_gc, fake_home):
-    from agentnet_cli.marketplace.client import PlatformError
-
-    mock_gc.return_value = _mock_client()
-    mock_gc.return_value.discover_agents.side_effect = PlatformError("Platform server error")
-    result = runner.invoke(app, ["agents", "weather"])
-    assert result.exit_code == 1
-    data = json.loads(result.stdout)
-    assert data["error"] == "Platform server error"

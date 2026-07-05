@@ -61,16 +61,6 @@ def test_discover(handlers):
     assert isinstance(result, dict)
 
 
-def test_wallet(handlers):
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"balance_minor": 500}))
-    h = ToolHandlers(
-        platform_url="https://x", api_token="t", agent_id="ag_1",
-        http_client=httpx.Client(transport=transport),
-    )
-    result = h.wallet(action="balance")
-    assert result["balance_minor"] == 500
-
-
 def test_discover_with_category(handlers):
     result = handlers.discover(query="test", category="translation")
     assert isinstance(result, dict)
@@ -154,61 +144,6 @@ def test_settle_session():
     h = _make_handlers(handler)
     result = h.settle_session(session_id="sess_2")
     assert result["settled"] is True
-
-
-# --- wallet history ---
-
-
-def test_wallet_history():
-    def handler(req: httpx.Request) -> httpx.Response:
-        assert "/wallet/agent_123/history" in req.url.path
-        return httpx.Response(200, json={"transactions": [{"id": "tx_1"}]})
-
-    h = _make_handlers(handler)
-    result = h.wallet(action="history")
-    assert result["transactions"][0]["id"] == "tx_1"
-
-
-# --- wallet invalid action ---
-
-
-def test_wallet_invalid_action():
-    h = _make_handlers(lambda req: httpx.Response(200, json={}))
-    with pytest.raises(ValueError, match="Invalid action"):
-        h.wallet(action="delete")
-
-
-# --- wallet_topup ---
-
-
-def test_wallet_topup():
-    def handler(req: httpx.Request) -> httpx.Response:
-        assert "/wallet/agent_123/topup" in req.url.path
-        body = json.loads(req.content)
-        assert body["amount"] == 25.0
-        return httpx.Response(200, json={"new_balance": 125})
-
-    h = _make_handlers(handler)
-    result = h.wallet_topup(amount=25.0)
-    assert result["new_balance"] == 125
-
-
-def test_wallet_topup_validation_zero():
-    h = _make_handlers(lambda req: httpx.Response(200, json={}))
-    with pytest.raises(ValueError, match="amount must be between 0"):
-        h.wallet_topup(amount=0)
-
-
-def test_wallet_topup_validation_negative():
-    h = _make_handlers(lambda req: httpx.Response(200, json={}))
-    with pytest.raises(ValueError, match="amount must be between 0"):
-        h.wallet_topup(amount=-5)
-
-
-def test_wallet_topup_validation_too_high():
-    h = _make_handlers(lambda req: httpx.Response(200, json={}))
-    with pytest.raises(ValueError, match="amount must be between 0"):
-        h.wallet_topup(amount=10001)
 
 
 # --- discover_agents ---
