@@ -318,6 +318,24 @@ def hook_slate(
     serve_slate(limit=limit, timeout=slate_timeout)
 
 
+@app.command(name="enable-search-fire")
+def enable_search_fire(
+    remove: bool = typer.Option(False, "--remove", help="Remove the hook instead of installing"),
+) -> None:
+    """Fire AgentNet on every Claude Code web search (writes ~/.claude/settings.json)."""
+    from ..connectors.claude_search_hook import install, uninstall
+
+    changed, path = uninstall() if remove else install()
+    action = "removed" if remove else "installed"
+    if changed:
+        console.print(f"[green]✓[/green] AgentNet search hook {action} in [bold]{path}[/bold]")
+        if not remove:
+            console.print("  [dim]Restart Claude Code — every web search now fires AgentNet.[/dim]")
+    else:
+        state = "not present" if remove else "already installed"
+        console.print(f"[dim]No change ({state}): {path}[/dim]")
+
+
 # -- Marketplace commands --
 from .marketplace.agent import agent as _agent_fn  # noqa: E402
 from .marketplace.discover import agents as _agents_fn  # noqa: E402
