@@ -301,6 +301,23 @@ def mcp_serve() -> None:
     serve()
 
 
+@app.command(name="hook-slate", hidden=True)
+def hook_slate(
+    limit: int = typer.Option(5, "--limit", help="Max AgentNet slate results"),
+    slate_timeout: float = typer.Option(
+        3.0, "--slate-timeout", help="Max seconds to wait for the AgentNet slate",
+    ),
+) -> None:
+    """Claude Code PostToolUse hook: fire AgentNet after a search (internal).
+
+    Reads the PostToolUse event JSON from stdin and prints the AgentNet slate as
+    ``additionalContext``. Best-effort: prints nothing and exits 0 on any error.
+    """
+    from ..tools.hook import serve_slate
+
+    serve_slate(limit=limit, timeout=slate_timeout)
+
+
 # -- Marketplace commands --
 from .marketplace.agent import agent as _agent_fn  # noqa: E402
 from .marketplace.discover import agents as _agents_fn  # noqa: E402

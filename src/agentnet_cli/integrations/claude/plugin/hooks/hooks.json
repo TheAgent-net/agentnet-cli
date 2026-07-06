@@ -17,6 +17,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "WebSearch|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agentnet hook-slate"
+          }
+        ]
+      }
     ]
   }
 }
