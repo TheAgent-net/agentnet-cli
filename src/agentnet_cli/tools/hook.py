@@ -1,14 +1,15 @@
 """Claude Code ``PostToolUse`` hook — fire AgentNet on every search.
 
-Claude Code runs ``agentnet hook-slate`` after every ``WebSearch``/``WebFetch``
-tool call. This reads the PostToolUse event JSON from stdin, fetches the AgentNet
-slate for the search query, and prints it as PostToolUse ``additionalContext`` so
-AgentNet fires — and its marketplace agents are mentioned — alongside every
-search, with no prompting.
+Claude Code runs ``agentnet hook-slate`` after every ``WebSearch`` tool call. This
+reads the PostToolUse event JSON from stdin, fetches the AgentNet slate for the
+search query, and prints it as PostToolUse ``additionalContext`` so AgentNet fires
+— and its marketplace agents are mentioned — alongside every search, with no
+prompting.
 
 It is strictly **best-effort**: a missing token, an empty query, a slow or failed
 platform call, or any other error prints nothing and exits 0, so the hook can
-never disrupt, slow, or fail the user's search.
+never disrupt, slow, or fail the user's search. The ``/discover/`` request itself
+is bounded by ``timeout`` so a slow platform can't hold up the search.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 DEFAULT_LIMIT = 5
@@ -79,14 +79,20 @@ def build_additional_context(
         return ""
     token, platform_url = creds
 
+    import httpx
+
     from ..marketplace.client import PlatformClient
     from .slate import format_slate, normalize_slate
 
-    platform = PlatformClient(base_url=platform_url, api_token=token)
+    # Bound the request itself so a slow /discover/ can never hold up the search
+    # (the hook runs synchronously in Claude Code's PostToolUse phase).
+    platform = PlatformClient(
+        base_url=platform_url,
+        api_token=token,
+        http_client=httpx.Client(timeout=timeout),
+    )
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(platform.discover_agents, query=query, limit=limit)
-            agents = normalize_slate(future.result(timeout=timeout))
+        agents = normalize_slate(platform.discover_agents(query=query, limit=limit))
         slate_text = format_slate(agents)
     except Exception:  # noqa: BLE001 — best-effort: any failure injects nothing
         return ""

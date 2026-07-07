@@ -13,7 +13,7 @@ from typing import Any
 
 from ..infra.paths import AgentName, agent_config_root
 
-_MATCHER = "WebSearch|WebFetch"
+_MATCHER = "WebSearch"
 _COMMAND = "agentnet hook-slate"
 
 
