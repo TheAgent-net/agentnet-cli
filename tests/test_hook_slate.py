@@ -1,70 +1,145 @@
+import io
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
 from agentnet_cli.cli.main import app
 from agentnet_cli.infra.package_paths import bundled_claude_marketplace
 from agentnet_cli.tools import hook
+from agentnet_cli.tools.slate import extract_query, format_slate, parse_slate
 
 runner = CliRunner()
 
-EVENT = json.dumps({"tool_name": "WebSearch", "tool_input": {"query": "pdf parsing"}})
-
-SLATE = [
-    {"name": "PDF Pro", "description": "parse pdfs", "sponsored": True, "score": 9, "url": "https://x"},
-    {"name": "DocAI", "description": "docs", "score": 7},
+# Shape of GET /discover/ — a bare list[DiscoveryResult]
+DISCOVER = [
+    {
+        "agent_id": "a1", "name": "PDF Pro", "description": "parse pdfs",
+        "url": "https://x", "score": 9.4, "skills": [{"name": "ocr"}], "kind": "agent",
+    },
+    {
+        "agent_id": "a2", "name": "DocAI", "description": "docs",
+        "url": "https://y", "score": 7, "skills": [], "kind": "skill",
+    },
 ]
-
 _CREDS = "agentnet_cli.tools.hook._resolve_credentials"
 _DISCOVER = "agentnet_cli.marketplace.client.PlatformClient.discover_agents"
+_ENVELOPE = '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"AgentNet X"}}'
 
 
-def _build(event=EVENT, slate=SLATE, **kwargs):
-    with patch(_CREDS, return_value=("tok", "https://pf")), patch(_DISCOVER, return_value=slate):
-        return hook.build_additional_context(event, **kwargs)
+# ── slate.py ──────────────────────────────────────────────────────────────
+def test_extract_query():
+    assert extract_query({"query": "pdf"}) == "pdf"
+    assert extract_query({"q": "  weather "}) == "weather"
+    assert extract_query({"url": "http://x", "prompt": "summarize"}) == ""  # WebFetch-style
 
 
-def test_happy_path_emits_posttooluse_envelope():
-    out = _build()
-    data = json.loads(out)
+def test_parse_slate_is_deterministic():
+    items = parse_slate(DISCOVER)
+    assert [i.name for i in items] == ["PDF Pro", "DocAI"]
+    assert items[0].skills == ["ocr"] and items[0].kind == "agent"
+    assert items[1].kind == "skill"
+    # not a bare list -> nothing (no key-guessing)
+    assert parse_slate({"agents": DISCOVER}) == []
+    assert parse_slate("nope") == []
+
+
+def test_format_slate_no_sponsored_no_price():
+    text = format_slate(parse_slate(DISCOVER))
+    assert "PDF Pro" in text and "DocAI" in text
+    assert "[SPONSORED]" not in text
+    assert "/req" not in text and "$" not in text
+    assert "score 9.4" in text and "skills: ocr" in text
+
+
+def test_format_slate_empty():
+    assert format_slate([]) == ""
+
+
+# ── hook.build_additional_context ─────────────────────────────────────────
+def _ctx(query="pdf parsing", discover=DISCOVER):
+    with patch(_CREDS, return_value=("tok", "https://pf")), patch(_DISCOVER, return_value=discover):
+        return hook.build_additional_context(query, limit=5, timeout=3.0)
+
+
+def test_build_context_happy():
+    data = json.loads(_ctx())
     assert data["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-    ctx = data["hookSpecificOutput"]["additionalContext"]
-    assert "AgentNet" in ctx and "PDF Pro" in ctx and "DocAI" in ctx
-    assert ctx.count("[SPONSORED]") == 1  # only the sponsored entry is labeled
+    assert "PDF Pro" in data["hookSpecificOutput"]["additionalContext"]
 
 
-def test_no_token_is_silent():
+def test_build_context_best_effort():
+    assert hook.build_additional_context("", limit=5, timeout=3.0) == ""  # empty query
     with patch(_CREDS, return_value=None):
-        assert hook.build_additional_context(EVENT) == ""
+        assert hook.build_additional_context("pdf", limit=5, timeout=3.0) == ""  # no token
+    assert _ctx(discover=[]) == ""  # empty results
+    with patch(_CREDS, return_value=("t", "p")), patch(_DISCOVER, side_effect=RuntimeError("x")):
+        assert hook.build_additional_context("pdf", limit=5, timeout=3.0) == ""  # error
 
 
-def test_empty_query_is_silent():
-    event = json.dumps({"tool_name": "WebSearch", "tool_input": {"foo": "bar"}})
-    assert _build(event=event) == ""
-
-
-def test_missing_tool_input_is_silent():
-    assert _build(event=json.dumps({"tool_name": "WebSearch"})) == ""
-
-
-def test_malformed_stdin_is_silent():
-    assert hook.build_additional_context("not json at all") == ""
-    assert hook.build_additional_context("[1, 2, 3]") == ""
-
-
-def test_empty_slate_is_silent():
-    assert _build(slate=[]) == ""
-
-
-def test_platform_failure_is_silent():
+# ── pre / fetch / post cache flow ─────────────────────────────────────────
+def test_fetch_writes_cache(tmp_path):
+    cache = tmp_path / "slate.json"
     with (
-        patch(_CREDS, return_value=("tok", "https://pf")),
-        patch(_DISCOVER, side_effect=RuntimeError("boom")),
+        patch("agentnet_cli.tools.hook._cache_path", return_value=cache),
+        patch(_CREDS, return_value=("t", "p")),
+        patch(_DISCOVER, return_value=DISCOVER),
     ):
-        assert hook.build_additional_context(EVENT) == ""
+        hook.run_fetch(session="s1", query="pdf", limit=5, timeout=3.0)
+    assert cache.exists()
+    assert "PDF Pro" in json.loads(cache.read_text())["hookSpecificOutput"]["additionalContext"]
 
 
+def test_post_injects_cached_and_cleans_up(tmp_path, monkeypatch, capsys):
+    cache = tmp_path / "slate.json"
+    cache.write_text(_ENVELOPE)
+    monkeypatch.setattr("agentnet_cli.tools.hook._cache_path", lambda s, q: cache)
+    monkeypatch.setattr(
+        "agentnet_cli.tools.hook.sys.stdin",
+        io.StringIO(json.dumps({"session_id": "s", "tool_input": {"query": "pdf"}})),
+    )
+    hook.run_post(limit=5, timeout=0.3)
+    assert "AgentNet X" in capsys.readouterr().out
+    assert not cache.exists()  # cleaned up
+
+
+def test_post_silent_when_cache_absent(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("agentnet_cli.tools.hook._cache_path", lambda s, q: tmp_path / "nope.json")
+    monkeypatch.setattr(
+        "agentnet_cli.tools.hook.sys.stdin",
+        io.StringIO(json.dumps({"session_id": "s", "tool_input": {"query": "pdf"}})),
+    )
+    hook.run_post(limit=5, timeout=0.15)  # bounded — never blocks
+    assert capsys.readouterr().out == ""
+
+
+def test_pre_spawns_detached_worker(monkeypatch):
+    monkeypatch.setattr(
+        "agentnet_cli.tools.hook.sys.stdin",
+        io.StringIO(json.dumps({"session_id": "s9", "tool_input": {"query": "vector db"}})),
+    )
+    monkeypatch.setattr("agentnet_cli.tools.hook.shutil.which", lambda n: "/usr/bin/agentnet")
+    captured = {}
+
+    def fake_popen(args, **kwargs):
+        captured["args"] = args
+        return MagicMock()
+
+    monkeypatch.setattr("agentnet_cli.tools.hook.subprocess.Popen", fake_popen)
+    hook.run_pre(limit=5, timeout=3.0)
+    args = captured["args"]
+    assert "--fetch" in args and "vector db" in args and "s9" in args
+
+
+def test_pre_silent_on_empty_query(monkeypatch):
+    monkeypatch.setattr("agentnet_cli.tools.hook.sys.stdin", io.StringIO('{"tool_input":{}}'))
+    called = MagicMock()
+    monkeypatch.setattr("agentnet_cli.tools.hook.subprocess.Popen", called)
+    hook.run_pre(limit=5, timeout=3.0)
+    called.assert_not_called()
+
+
+# ── credentials ───────────────────────────────────────────────────────────
 def test_resolve_credentials_from_env(monkeypatch):
     monkeypatch.setenv("AGENTNET_TOKEN", "envtok")
     with patch("agentnet_cli.infra.config.load_config", return_value=None):
@@ -77,27 +152,40 @@ def test_resolve_credentials_none_without_token(monkeypatch):
         assert hook._resolve_credentials() is None
 
 
-def test_cli_prints_envelope_to_stdout():
-    with patch(_CREDS, return_value=("tok", "https://pf")), patch(_DISCOVER, return_value=SLATE):
-        result = runner.invoke(app, ["hook-slate"], input=EVENT)
-    assert result.exit_code == 0
-    assert "PostToolUse" in result.stdout and "AgentNet" in result.stdout
-
-
-def test_cli_silent_and_zero_exit_without_token():
-    with patch(_CREDS, return_value=None):
-        result = runner.invoke(app, ["hook-slate"], input=EVENT)
-    assert result.exit_code == 0
-    assert result.stdout.strip() == ""
-
-
-def test_plugin_registers_posttooluse_hook():
-    """The bundled Claude plugin wires WebSearch through `agentnet hook-slate`."""
-    hooks_path = bundled_claude_marketplace() / "plugin" / "hooks" / "hooks.json"
-    data = json.loads(hooks_path.read_text())
-    post = data["hooks"]["PostToolUse"]
-    assert any(
-        "WebSearch" in block.get("matcher", "")
-        and any(h.get("command") == "agentnet hook-slate" for h in block.get("hooks", []))
-        for block in post
+# ── CLI dispatch ──────────────────────────────────────────────────────────
+def test_cli_post_reads_cache(tmp_path, monkeypatch):
+    cache = tmp_path / "c.json"
+    cache.write_text(_ENVELOPE)
+    monkeypatch.setattr("agentnet_cli.tools.hook._cache_path", lambda s, q: cache)
+    result = runner.invoke(
+        app,
+        ["hook-slate", "--post", "--slate-timeout", "0.3"],
+        input=json.dumps({"session_id": "s", "tool_input": {"query": "pdf"}}),
     )
+    assert result.exit_code == 0 and "AgentNet X" in result.stdout
+
+
+def test_cli_pre_spawns(monkeypatch):
+    monkeypatch.setattr("agentnet_cli.tools.hook.subprocess.Popen", lambda *a, **k: MagicMock())
+    monkeypatch.setattr("agentnet_cli.tools.hook.shutil.which", lambda n: "agentnet")
+    result = runner.invoke(
+        app, ["hook-slate", "--pre"],
+        input=json.dumps({"session_id": "s", "tool_input": {"query": "pdf"}}),
+    )
+    assert result.exit_code == 0
+
+
+# ── plugin wiring ─────────────────────────────────────────────────────────
+def test_plugin_registers_pre_and_post_hooks():
+    hooks_path = bundled_claude_marketplace() / "plugin" / "hooks" / "hooks.json"
+    hooks = json.loads(hooks_path.read_text())["hooks"]
+
+    def has(event: str, cmd: str) -> bool:
+        return any(
+            "WebSearch" in b.get("matcher", "")
+            and any(h.get("command") == cmd for h in b.get("hooks", []))
+            for b in hooks.get(event, [])
+        )
+
+    assert has("PreToolUse", "agentnet hook-slate --pre")
+    assert has("PostToolUse", "agentnet hook-slate --post")

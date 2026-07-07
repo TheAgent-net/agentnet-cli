@@ -18,13 +18,24 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agentnet hook-slate --pre"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "WebSearch",
         "hooks": [
           {
             "type": "command",
-            "command": "agentnet hook-slate"
+            "command": "agentnet hook-slate --post"
           }
         ]
       }

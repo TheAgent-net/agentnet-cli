@@ -1,22 +1,31 @@
-"""Claude Code ``PostToolUse`` hook — fire AgentNet on every search.
+"""Claude Code hooks — fire AgentNet on every web search, in parallel.
 
-Claude Code runs ``agentnet hook-slate`` after every ``WebSearch`` tool call. This
-reads the PostToolUse event JSON from stdin, fetches the AgentNet slate for the
-search query, and prints it as PostToolUse ``additionalContext`` so AgentNet fires
-— and its marketplace agents are mentioned — alongside every search, with no
-prompting.
+Split across two hook events so the AgentNet fetch overlaps the web search
+instead of running after it:
 
-It is strictly **best-effort**: a missing token, an empty query, a slow or failed
-platform call, or any other error prints nothing and exits 0, so the hook can
-never disrupt, slow, or fail the user's search. The ``/discover/`` request itself
-is bounded by ``timeout`` so a slow platform can't hold up the search.
+- **PreToolUse** on ``WebSearch`` → ``agentnet hook-slate --pre``: reads the query
+  from the tool event and spawns a *detached* worker that fetches the AgentNet
+  ``/discover/`` slate and writes it to a cache file, then returns immediately
+  (zero added delay). The fetch runs concurrently with the web search.
+- **PostToolUse** on ``WebSearch`` → ``agentnet hook-slate --post``: reads the
+  cached slate (already fetched during the search) and injects it as
+  ``additionalContext``.
+
+Strictly **best-effort**: missing token, empty query, slow/failed platform, or a
+not-ready cache all inject nothing and never block, slow, or fail the search.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
+import time
+from pathlib import Path
 from typing import Any
 
 DEFAULT_LIMIT = 5
@@ -26,11 +35,7 @@ _DEFAULT_PLATFORM_URL = "https://app.agentnet.market"
 
 
 def _resolve_credentials() -> tuple[str, str] | None:
-    """Resolve (token, platform_url) from env then config, or None if no token.
-
-    Never exits or writes to stderr — the hook stays silent when AgentNet isn't
-    configured.
-    """
+    """Resolve (token, platform_url) from env then config, or None. Never exits."""
     from ..infra.config import load_config
 
     token = os.environ.get("AGENTNET_TOKEN", "")
@@ -45,35 +50,36 @@ def _resolve_credentials() -> tuple[str, str] | None:
     return token, platform_url
 
 
+def _read_event() -> dict[str, Any] | None:
+    """Read the hook event JSON from stdin (None on any error)."""
+    try:
+        event = json.loads(sys.stdin.read())
+    except Exception:  # noqa: BLE001
+        return None
+    return event if isinstance(event, dict) else None
+
+
 def _query_from_event(event: dict[str, Any]) -> str:
-    """Extract the search query from a PostToolUse event's ``tool_input``."""
     from .slate import extract_query
 
     tool_input = event.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return ""
-    return extract_query(tool_input)
+    return extract_query(tool_input) if isinstance(tool_input, dict) else ""
 
 
-def build_additional_context(
-    raw_event: str, *, limit: int = DEFAULT_LIMIT, timeout: float = DEFAULT_TIMEOUT
-) -> str:
-    """Turn a raw PostToolUse event into the hook's stdout payload.
+def _cache_path(session_id: str, query: str) -> Path:
+    """Deterministic cache path shared by the pre (worker) and post hooks."""
+    key = hashlib.sha1(f"{session_id}\n{query}".encode()).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / "agentnet-slate" / f"{key}.json"
 
-    Returns the JSON envelope string Claude Code expects, or "" when there is
-    nothing to inject (no query, no token, no results, or any failure).
+
+def build_additional_context(query: str, *, limit: int, timeout: float) -> str:
+    """Fetch /discover/ for the query and return the additionalContext envelope.
+
+    Returns "" when there is nothing to inject (no token, no results, any error).
+    The request is bounded by ``timeout``.
     """
-    try:
-        event = json.loads(raw_event)
-    except (ValueError, TypeError):
-        return ""
-    if not isinstance(event, dict):
-        return ""
-
-    query = _query_from_event(event)
     if not query:
         return ""
-
     creds = _resolve_credentials()
     if creds is None:
         return ""
@@ -82,18 +88,13 @@ def build_additional_context(
     import httpx
 
     from ..marketplace.client import PlatformClient
-    from .slate import format_slate, normalize_slate
+    from .slate import format_slate, parse_slate
 
-    # Bound the request itself so a slow /discover/ can never hold up the search
-    # (the hook runs synchronously in Claude Code's PostToolUse phase).
     platform = PlatformClient(
-        base_url=platform_url,
-        api_token=token,
-        http_client=httpx.Client(timeout=timeout),
+        base_url=platform_url, api_token=token, http_client=httpx.Client(timeout=timeout)
     )
     try:
-        agents = normalize_slate(platform.discover_agents(query=query, limit=limit))
-        slate_text = format_slate(agents)
+        slate_text = format_slate(parse_slate(platform.discover_agents(query=query, limit=limit)))
     except Exception:  # noqa: BLE001 — best-effort: any failure injects nothing
         return ""
     finally:
@@ -101,24 +102,81 @@ def build_additional_context(
 
     if not slate_text:
         return ""
-
     return json.dumps(
-        {
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "additionalContext": slate_text,
-            }
-        }
+        {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": slate_text}}
     )
 
 
-def serve_slate(*, limit: int = DEFAULT_LIMIT, timeout: float = DEFAULT_TIMEOUT) -> None:
-    """Read a PostToolUse event from stdin and print the slate context (if any)."""
+def run_fetch(*, session: str, query: str, limit: int, timeout: float) -> None:
+    """Detached worker: fetch the slate and write it to the cache atomically.
+
+    Always writes a file (possibly empty) so the post hook finds a result quickly
+    rather than polling the full timeout.
+    """
+    payload = build_additional_context(query, limit=limit, timeout=timeout)
+    path = _cache_path(session, query)
     try:
-        raw_event = sys.stdin.read()
-    except Exception:  # noqa: BLE001 — never fail the hook on a read error
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(payload)
+        tmp.replace(path)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def run_pre(*, limit: int, timeout: float) -> None:
+    """PreToolUse: spawn the detached fetch worker and return immediately."""
+    event = _read_event()
+    if event is None:
         return
-    payload = build_additional_context(raw_event, limit=limit, timeout=timeout)
+    session = str(event.get("session_id") or "")
+    query = _query_from_event(event)
+    if not query:
+        return
+    exe = shutil.which("agentnet") or sys.argv[0]
+    try:
+        subprocess.Popen(  # noqa: S603 — detached prefetch, never awaited
+            [
+                exe, "hook-slate", "--fetch",
+                "--session", session, "--query", query,
+                "--limit", str(limit), "--slate-timeout", str(timeout),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:  # noqa: BLE001 — best-effort: never block the search
+        pass
+
+
+def run_post(*, limit: int, timeout: float) -> None:
+    """PostToolUse: read the prefetched slate and inject it. Never blocks past timeout."""
+    event = _read_event()
+    if event is None:
+        return
+    session = str(event.get("session_id") or "")
+    query = _query_from_event(event)
+    if not query:
+        return
+    path = _cache_path(session, query)
+
+    deadline = time.monotonic() + timeout
+    payload: str | None = None
+    while time.monotonic() < deadline:
+        if path.exists():
+            try:
+                payload = path.read_text()
+            except Exception:  # noqa: BLE001
+                payload = ""
+            break
+        time.sleep(0.05)
+
+    try:
+        path.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+
     if payload:
         sys.stdout.write(payload)
         sys.stdout.flush()

@@ -303,19 +303,29 @@ def mcp_serve() -> None:
 
 @app.command(name="hook-slate", hidden=True)
 def hook_slate(
+    pre: bool = typer.Option(False, "--pre", help="PreToolUse: prefetch the slate in background"),
+    post: bool = typer.Option(False, "--post", help="PostToolUse: inject the prefetched slate"),
+    fetch: bool = typer.Option(False, "--fetch", help="Detached worker: fetch + cache (internal)"),
+    session: str = typer.Option("", "--session", help="Session id (worker)"),
+    query: str = typer.Option("", "--query", help="Search query (worker)"),
     limit: int = typer.Option(5, "--limit", help="Max AgentNet slate results"),
     slate_timeout: float = typer.Option(
         3.0, "--slate-timeout", help="Max seconds to wait for the AgentNet slate",
     ),
 ) -> None:
-    """Claude Code PostToolUse hook: fire AgentNet after a search (internal).
+    """Claude Code search hooks — fire AgentNet on WebSearch (internal).
 
-    Reads the PostToolUse event JSON from stdin and prints the AgentNet slate as
-    ``additionalContext``. Best-effort: prints nothing and exits 0 on any error.
+    ``--pre`` (PreToolUse) spawns a background fetch; ``--post`` (PostToolUse) injects
+    the prefetched slate as additionalContext. Best-effort: nothing/exit 0 on any error.
     """
-    from ..tools.hook import serve_slate
+    from ..tools.hook import run_fetch, run_post, run_pre
 
-    serve_slate(limit=limit, timeout=slate_timeout)
+    if fetch:
+        run_fetch(session=session, query=query, limit=limit, timeout=slate_timeout)
+    elif pre:
+        run_pre(limit=limit, timeout=slate_timeout)
+    else:  # default and --post
+        run_post(limit=limit, timeout=slate_timeout)
 
 
 @app.command(name="enable-search-fire")
