@@ -8,8 +8,7 @@ DISCOVERY_BASE = PKG_ROOT / "integrations" / "shared" / "discovery-skill.base.md
 CONTEXT = REPO_ROOT / "src" / "agentnet_cli" / "connectors" / "templates" / "shared" / "context.md"
 
 REQUIRED_PHRASES = (
-    "agentnet_search",
-    "search first",
+    "agentnet_discover_agents",
 )
 
 FORBIDDEN_PHRASES = (

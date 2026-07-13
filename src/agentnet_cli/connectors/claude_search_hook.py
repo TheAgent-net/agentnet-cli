@@ -1,9 +1,13 @@
-"""Install the AgentNet search hooks directly into Claude Code's settings.json.
+"""Install the AgentNet every-prompt hooks directly into Claude Code's settings.json.
 
-Registers a PreToolUse hook (prefetch the AgentNet slate in the background) and a
-PostToolUse hook (inject the prefetched slate) on ``WebSearch``. Same effect as the
-bundled plugin, but written straight into ``~/.claude/settings.json`` so it works in
-one command regardless of Claude Code version.
+Registers three hooks: ``UserPromptSubmit`` (spawn a background discovery worker),
+``PostToolUse`` (steer the agent mid-flight once the outcome is ready), and ``Stop``
+(guaranteed fallback that folds the outcome in). Same effect as the bundled plugin, but
+written straight into ``~/.claude/settings.json`` so it works in one command regardless of
+Claude Code version.
+
+``PostToolUse`` is tool-scoped so its block carries a ``*`` matcher (all tools);
+``UserPromptSubmit`` and ``Stop`` are not tool-scoped, so their blocks carry no matcher.
 """
 
 from __future__ import annotations
@@ -13,10 +17,11 @@ from typing import Any
 
 from ..infra.paths import AgentName, agent_config_root
 
-_MATCHER = "WebSearch"
-_HOOKS: dict[str, str] = {
-    "PreToolUse": "agentnet hook-slate --pre",
-    "PostToolUse": "agentnet hook-slate --post",
+# event -> (command, matcher). matcher=None for non-tool-scoped events.
+_HOOKS: dict[str, tuple[str, str | None]] = {
+    "UserPromptSubmit": ("agentnet skill-hook --pre", None),
+    "PostToolUse": ("agentnet skill-hook --peek", "*"),
+    "Stop": ("agentnet skill-hook --post", None),
 }
 
 
@@ -35,11 +40,15 @@ def _load(path) -> dict[str, Any]:
 
 
 def _is_agentnet_cmd(cmd: Any) -> bool:
-    return isinstance(cmd, str) and cmd.startswith("agentnet hook-slate")
+    return isinstance(cmd, str) and cmd.startswith("agentnet skill-hook")
 
 
-def _block(command: str) -> dict[str, Any]:
-    return {"matcher": _MATCHER, "hooks": [{"type": "command", "command": command}]}
+def _block(command: str, matcher: str | None) -> dict[str, Any]:
+    block: dict[str, Any] = {}
+    if matcher is not None:
+        block["matcher"] = matcher
+    block["hooks"] = [{"type": "command", "command": command}]
+    return block
 
 
 def _event_has_agentnet(blocks: list[Any]) -> bool:
@@ -52,7 +61,7 @@ def _event_has_agentnet(blocks: list[Any]) -> bool:
 
 
 def install() -> tuple[bool, str]:
-    """Add the Pre/Post search hooks to settings.json. Returns (changed, path)."""
+    """Add the UserPromptSubmit/Stop hooks to settings.json. Returns (changed, path)."""
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _load(path)
@@ -62,13 +71,13 @@ def install() -> tuple[bool, str]:
         data["hooks"] = hooks
 
     changed = False
-    for event, command in _HOOKS.items():
+    for event, (command, matcher) in _HOOKS.items():
         blocks = hooks.get(event)
         if not isinstance(blocks, list):
             blocks = []
             hooks[event] = blocks
         if not _event_has_agentnet(blocks):
-            blocks.append(_block(command))
+            blocks.append(_block(command, matcher))
             changed = True
 
     if changed:
@@ -77,7 +86,7 @@ def install() -> tuple[bool, str]:
 
 
 def uninstall() -> tuple[bool, str]:
-    """Remove the AgentNet search hooks from settings.json. Returns (changed, path)."""
+    """Remove the AgentNet every-prompt hooks from settings.json. Returns (changed, path)."""
     path = _settings_path()
     data = _load(path)
     hooks = data.get("hooks")

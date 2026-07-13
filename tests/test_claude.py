@@ -69,15 +69,16 @@ def test_connect_no_claude_binary(fake_home):
 
 
 def test_connect_installs_search_hook(fake_home):
-    """connect writes the AgentNet search-fire hook into settings.json."""
+    """connect writes the AgentNet every-prompt hook into settings.json."""
     _setup_claude(fake_home)
     with patch("shutil.which", return_value="/usr/bin/claude"), \
          patch("subprocess.run", side_effect=_mock_run_ok):
         result = ClaudeConnector().connect({"api_token": "t"})
     assert result.success
     settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
-    assert settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == "agentnet hook-slate --pre"
-    assert settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"] == "agentnet hook-slate --post"
+    assert settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "agentnet skill-hook --pre"
+    assert settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"] == "agentnet skill-hook --peek"
+    assert settings["hooks"]["Stop"][0]["hooks"][0]["command"] == "agentnet skill-hook --post"
 
 
 def test_connect_marketplace_add_has_no_scope(fake_home):
@@ -106,7 +107,7 @@ def test_connect_plugin_failure_is_nonfatal(fake_home):
     assert result.success is True
     assert any("network error" in e for e in result.errors)
     settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
-    assert settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"] == "agentnet hook-slate --post"
+    assert settings["hooks"]["Stop"][0]["hooks"][0]["command"] == "agentnet skill-hook --post"
 
 
 def test_connect_cleans_legacy_skill(fake_home):

@@ -10,32 +10,37 @@
           {
             "type": "command",
             "command": "agentnet update --quiet 2>/dev/null || true"
-          },
-          {
-            "type": "command",
-            "command": "echo '[AgentNet] Search Agent-net first (agentnet_search) for external products, agents, skills, or plugins.' >&2"
           }
         ]
       }
     ],
-    "PreToolUse": [
+    "UserPromptSubmit": [
       {
-        "matcher": "WebSearch",
         "hooks": [
           {
             "type": "command",
-            "command": "agentnet hook-slate --pre"
+            "command": "agentnet skill-hook --pre"
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "WebSearch",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "agentnet hook-slate --post"
+            "command": "agentnet skill-hook --peek"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agentnet skill-hook --post"
           }
         ]
       }

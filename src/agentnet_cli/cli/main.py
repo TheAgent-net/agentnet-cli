@@ -301,46 +301,50 @@ def mcp_serve() -> None:
     serve()
 
 
-@app.command(name="hook-slate", hidden=True)
-def hook_slate(
-    pre: bool = typer.Option(False, "--pre", help="PreToolUse: prefetch the slate in background"),
-    post: bool = typer.Option(False, "--post", help="PostToolUse: inject the prefetched slate"),
-    fetch: bool = typer.Option(False, "--fetch", help="Detached worker: fetch + cache (internal)"),
+@app.command(name="skill-hook", hidden=True)
+def skill_hook(
+    pre: bool = typer.Option(False, "--pre", help="UserPromptSubmit: spawn the discovery worker"),
+    peek: bool = typer.Option(False, "--peek", help="PostToolUse: steer the agent mid-flight"),
+    post: bool = typer.Option(False, "--post", help="Stop: fold in relevant AgentNet skills"),
+    fetch: bool = typer.Option(False, "--fetch", help="Detached worker: discover + cache (internal)"),
     session: str = typer.Option("", "--session", help="Session id (worker)"),
-    query: str = typer.Option("", "--query", help="Search query (worker)"),
-    limit: int = typer.Option(5, "--limit", help="Max AgentNet slate results"),
-    slate_timeout: float = typer.Option(
-        3.0, "--slate-timeout", help="Max seconds to wait for the AgentNet slate",
+    query: str = typer.Option("", "--query", help="Prompt text (worker)"),
+    limit: int = typer.Option(5, "--limit", help="Max skills to suggest"),
+    hook_timeout: float = typer.Option(
+        3.0, "--timeout", help="Max seconds a hook waits for the subagent's result",
     ),
 ) -> None:
-    """Claude Code search hooks — fire AgentNet on WebSearch (internal).
+    """Claude Code every-prompt hooks — surface relevant AgentNet skills (internal).
 
-    ``--pre`` (PreToolUse) spawns a background fetch; ``--post`` (PostToolUse) injects
-    the prefetched slate as additionalContext. Best-effort: nothing/exit 0 on any error.
+    ``--pre`` (UserPromptSubmit) spawns a detached skill-scout worker; ``--peek`` (PostToolUse)
+    steers the agent mid-flight once the outcome is ready; ``--post`` (Stop) is the guaranteed
+    fallback. Best-effort: nothing/exit 0 on error.
     """
-    from ..tools.hook import run_fetch, run_post, run_pre
+    from ..tools.hook import run_fetch, run_peek, run_post, run_pre
 
     if fetch:
-        run_fetch(session=session, query=query, limit=limit, timeout=slate_timeout)
+        run_fetch(session=session, query=query, limit=limit, timeout=hook_timeout)
     elif pre:
-        run_pre(limit=limit, timeout=slate_timeout)
+        run_pre(limit=limit, timeout=hook_timeout)
+    elif peek:
+        run_peek(limit=limit, timeout=hook_timeout)
     else:  # default and --post
-        run_post(limit=limit, timeout=slate_timeout)
+        run_post(limit=limit, timeout=hook_timeout)
 
 
-@app.command(name="enable-search-fire")
-def enable_search_fire(
+@app.command(name="enable-skill-fire")
+def enable_skill_fire(
     remove: bool = typer.Option(False, "--remove", help="Remove the hook instead of installing"),
 ) -> None:
-    """Fire AgentNet on every Claude Code web search (writes ~/.claude/settings.json)."""
+    """Fire AgentNet on every Claude Code prompt (writes ~/.claude/settings.json)."""
     from ..connectors.claude_search_hook import install, uninstall
 
     changed, path = uninstall() if remove else install()
     action = "removed" if remove else "installed"
     if changed:
-        console.print(f"[green]✓[/green] AgentNet search hook {action} in [bold]{path}[/bold]")
+        console.print(f"[green]✓[/green] AgentNet skill hook {action} in [bold]{path}[/bold]")
         if not remove:
-            console.print("  [dim]Restart Claude Code — every web search now fires AgentNet.[/dim]")
+            console.print("  [dim]Restart Claude Code — every prompt now fires AgentNet.[/dim]")
     else:
         state = "not present" if remove else "already installed"
         console.print(f"[dim]No change ({state}): {path}[/dim]")
