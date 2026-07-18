@@ -185,3 +185,25 @@ class PlatformClient:
         if tags:
             body["tags"] = tags
         return self._post("/auth/cli/register-agent", body)
+
+    def send_telemetry(
+        self,
+        *,
+        event_type: str,
+        connector: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        from agentnet_cli import __version__  # noqa: PLC0415
+
+        body: dict[str, Any] = {"event_type": event_type, "cli_version": __version__}
+        if connector:
+            body["connector"] = connector
+        if metadata:
+            body["metadata"] = metadata
+        try:
+            if self._token:
+                self._post("/auth/telemetry", body)
+            else:
+                self._public_post("/auth/telemetry", body)
+        except Exception:
+            pass

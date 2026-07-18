@@ -38,6 +38,9 @@ Requires Python 3.11+.
 # Install from PyPI
 pip install agentnet-cli
 
+# Install this release exactly
+pip install agentnet-cli==0.3.0
+
 # Or run without installing
 uvx agentnet
 

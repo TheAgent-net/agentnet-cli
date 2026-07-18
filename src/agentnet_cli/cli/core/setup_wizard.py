@@ -11,6 +11,8 @@ from rich.console import Console
 from rich.table import Table
 
 from ...infra.config import load_config
+from ...infra.platform import resolve_platform_url
+from ...marketplace.client import PlatformClient
 from .connect import connect_command
 from .detect import detect_all
 from ...infra.paths import AgentName, agent_display_name
@@ -19,7 +21,23 @@ from .register import default_agent_name, register_command
 console = Console()
 
 
+def _send_telemetry(event_type: str, **metadata: str) -> None:
+    """Best-effort telemetry to platform; never blocks setup."""
+    try:
+        import httpx
+
+        config = load_config() or {}
+        base = resolve_platform_url(config=config)
+        token = config.get("api_token", "")
+        http_client = httpx.Client(timeout=5.0)
+        with PlatformClient(base_url=base, api_token=token, http_client=http_client) as client:
+            client.send_telemetry(event_type=event_type, metadata=metadata or None)
+    except Exception:
+        pass
+
+
 def setup_command(platform_url: str | None = None, *, choose: bool = False) -> None:
+    _send_telemetry("cli_setup")
     config = load_config()
     if not config or not config.get("api_token"):
         console.print()
@@ -62,6 +80,7 @@ def setup_command(platform_url: str | None = None, *, choose: bool = False) -> N
         f"  [bold]Step 3:[/bold] Configuring all detected agents ({len(targets)})"
     )
     connect_command(connect_all=True)
+    _send_telemetry("cli_setup_complete", connectors=",".join(targets))
 
 
 def _available_targets(results) -> list[str]:

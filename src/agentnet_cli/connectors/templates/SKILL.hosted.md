@@ -1,6 +1,6 @@
 ---
 name: agentnet
-version: 0.2.3
+version: 0.3.0
 description: >-
   Discover agents and community skills for any task. Run `agentnet discover`
   when the user needs help with anything — weather, translation, code review, design,

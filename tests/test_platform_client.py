@@ -1,4 +1,5 @@
 import httpx
+import json
 import pytest
 from agentnet_cli.marketplace.client import PlatformClient, PlatformError, _validate_path_segment
 
@@ -56,6 +57,42 @@ def test_auth_header_sent():
         http_client=httpx.Client(transport=transport),
     )
     c.discover(query="test")
+
+
+def test_send_telemetry_posts_best_effort_payload():
+    from agentnet_cli import __version__
+
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["path"] = req.url.path
+        seen["body"] = json.loads(req.content)
+        seen["auth"] = req.headers["authorization"]
+        return httpx.Response(200, json={})
+
+    c = _make_client(httpx.MockTransport(handler))
+    c.send_telemetry(
+        event_type="cli_setup_complete",
+        connector="claude",
+        metadata={"connectors": "claude,codex"},
+    )
+
+    assert seen["path"] == "/auth/telemetry"
+    assert seen["auth"] == "Bearer agn_test"
+    assert seen["body"] == {
+        "event_type": "cli_setup_complete",
+        "cli_version": __version__,
+        "connector": "claude",
+        "metadata": {"connectors": "claude,codex"},
+    }
+
+
+def test_send_telemetry_ignores_transport_errors():
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("offline", request=req)
+
+    c = _make_client(httpx.MockTransport(handler))
+    c.send_telemetry(event_type="cli_setup")
 
 
 # --- _handle_response error codes ---
