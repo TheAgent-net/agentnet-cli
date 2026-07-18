@@ -68,7 +68,31 @@ def test_connect_no_claude_binary(fake_home):
     assert any("Claude Code" in e for e in result.errors)
 
 
-def test_connect_install_failure(fake_home):
+def test_connect_installs_search_hook(fake_home):
+    """connect writes the AgentNet every-prompt hook into settings.json."""
+    _setup_claude(fake_home)
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        result = ClaudeConnector().connect({"api_token": "t"})
+    assert result.success
+    settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
+    assert settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "agentnet skill-hook --pre"
+    assert settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"] == "agentnet skill-hook --peek"
+    assert settings["hooks"]["Stop"][0]["hooks"][0]["command"] == "agentnet skill-hook --post"
+
+
+def test_connect_marketplace_add_has_no_scope(fake_home):
+    """`marketplace add` must not receive --scope (errors on some CC versions)."""
+    _setup_claude(fake_home)
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
+        ClaudeConnector().connect({"api_token": "t"})
+    add = next(c for c in mock_run.call_args_list if "marketplace" in c[0][0])
+    assert "--scope" not in add[0][0]
+
+
+def test_connect_plugin_failure_is_nonfatal(fake_home):
+    """Plugin (discovery tools) failure no longer fails connect — the hook is still installed."""
     _setup_claude(fake_home)
     fail = MagicMock(returncode=1, stderr=b"network error")
 
@@ -80,8 +104,10 @@ def test_connect_install_failure(fake_home):
     with patch("shutil.which", return_value="/usr/bin/claude"), \
          patch("subprocess.run", side_effect=side_effect):
         result = ClaudeConnector().connect({"api_token": "t"})
-    assert result.success is False
+    assert result.success is True
     assert any("network error" in e for e in result.errors)
+    settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
+    assert settings["hooks"]["Stop"][0]["hooks"][0]["command"] == "agentnet skill-hook --post"
 
 
 def test_connect_cleans_legacy_skill(fake_home):

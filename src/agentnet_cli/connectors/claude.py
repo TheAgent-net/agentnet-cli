@@ -45,34 +45,64 @@ class ClaudeConnector(AgentConnector):
                 errors=["Claude Code not found. Install it from https://code.claude.com"],
             )
 
-        marketplace_src = _marketplace_source()
+        # 1. Install the AgentNet every-prompt hook straight into settings.json.
+        #    This is the reliable path: every prompt fires AgentNet (discover +
+        #    fold in relevant skills). It does NOT depend on the plugin marketplace
+        #    flow (which errors on some Claude Code versions), so connect succeeds
+        #    even if that fails.
+        from .claude_search_hook import SettingsHookError
+        from .claude_search_hook import install as install_search_hook
 
-        proc = subprocess.run(
-            ["claude", "plugin", "marketplace", "add", marketplace_src, "--scope", "user"],
-            capture_output=True,
-            timeout=_SUBPROCESS_TIMEOUT,
-        )
-        if proc.returncode != 0:
-            msg = proc.stderr.decode(errors="replace").strip()
-            return ConnectionResult(success=False, errors=[f"marketplace add failed: {msg}"])
+        errors: list[str] = []
+        try:
+            install_search_hook()
+        except SettingsHookError as exc:
+            # A malformed settings.json must not be overwritten; report and preserve it, but let
+            # the rest of connect (MCP + plugin) still run.
+            errors.append(str(exc))
 
-        proc = subprocess.run(
-            ["claude", "plugin", "install", _PLUGIN_ID, "--scope", "user"],
-            capture_output=True,
-            timeout=_SUBPROCESS_TIMEOUT,
-        )
-        if proc.returncode != 0:
-            msg = proc.stderr.decode(errors="replace").strip()
-            return ConnectionResult(success=False, errors=[f"plugin install failed: {msg}"])
+        # 2. Best-effort: install the plugin for the discovery MCP tools and
+        #    session hooks. `marketplace add` takes only <source> (no --scope).
+        #    Failures here are non-fatal — the prompt hook above is already live.
+        try:
+            marketplace_src = _marketplace_source()
+            proc = subprocess.run(
+                ["claude", "plugin", "marketplace", "add", marketplace_src],
+                capture_output=True,
+                timeout=_SUBPROCESS_TIMEOUT,
+            )
+            if proc.returncode == 0:
+                proc = subprocess.run(
+                    ["claude", "plugin", "install", _PLUGIN_ID, "--scope", "user"],
+                    capture_output=True,
+                    timeout=_SUBPROCESS_TIMEOUT,
+                )
+                if proc.returncode != 0:
+                    errors.append(
+                        "plugin install (discovery tools) failed: "
+                        + proc.stderr.decode(errors="replace").strip()
+                    )
+            else:
+                errors.append(
+                    "plugin marketplace add (discovery tools) failed: "
+                    + proc.stderr.decode(errors="replace").strip()
+                )
+        except Exception as exc:  # noqa: BLE001 — plugin step is best-effort
+            errors.append(f"plugin step skipped: {exc}")
 
         self._cleanup_legacy()
 
         return ConnectionResult(
             success=True,
-            mcp_entry={"scope": "plugin", "plugin_name": _PLUGIN_ID},
+            mcp_entry={"scope": "settings-hook", "search_fire": True},
+            errors=errors,
         )
 
     def disconnect(self, connection_manifest: dict[str, Any]) -> bool:
+        from .claude_search_hook import uninstall as uninstall_search_hook
+
+        uninstall_search_hook()
+
         claude_bin = shutil.which("claude")
         if not claude_bin:
             return True

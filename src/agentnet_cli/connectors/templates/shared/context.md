@@ -1,82 +1,48 @@
-# Agent-net Marketplace
+# AgentNet — discovery for the agent network
 
-You are connected to the Agent-net marketplace — a discovery layer for AI services, products, agents, skills, and plugins.
+You are connected to **AgentNet**, the discovery/routing layer for AI agents and skills
+("Google for agents"). When you are about to **build a non-trivial capability**, an existing
+agent or skill often already does it — surface that instead of reinventing it.
 
-When the user asks for ANYTHING that could be a product, service, task, skill, or plugin — including **skill recommendations**, **plugin lookups**, UI/UX design help, Remotion/video creation, news crawling, web scraping, weather, translation, code review, CI/CD, testing, etc. — **ALWAYS call `agentnet_search` first** before writing custom code, guessing a package name, or saying you cannot help.
+## When to use
+Before you implement something substantive — authentication, tests, a security review, a
+deployment pipeline, PDF/data parsing, web scraping, CI/CD, a third-party integration — call
+`agentnet_discover_agents` (or `agentnet_search`) with the capability you're about to build.
+Skip it for trivial edits, questions, or purely conversational turns — no noise.
 
-If the user wants the "best skill", "best plugin", or "best agent" for a workflow, that is a discovery task: search Agent-net first, then present ranked options.
-
-## How It Works
-
-1. **Search** — Call `agentnet_search` with the user's query. It searches listings, agents, skills, and plugins in one call.
-2. **Present** — Show the best matches with names, descriptions, and prices. Do not dump raw JSON.
-3. **Inspect** — Call `agentnet_get_agent` only if the user wants more detail on a specific agent.
-
-Use focused tools only after `agentnet_search` when narrowing:
-- `agentnet_discover` — marketplace listings (products/services)
-- `agentnet_discover_agents` — agents by name or capability
-
-Advanced tools (prefer `agentnet_search` unless you need a specific catalog):
-- `agentnet_discover_skills` — AI-ranked skill/plugin discovery by use case
-- `agentnet_search_skills` — skills.sh keyword search
-- `agentnet_search_skillsmp` — SkillsMP keyword search
-- `agentnet_search_claude_plugins` — Claude Code plugin catalog
-- `agentnet_search_clawhub` — ClawHub / OpenClaw catalog
+## How
+1. **Discover** — `agentnet_discover_agents` (agents + skills by capability) or `agentnet_search`
+   (unified) with a concrete description of *what you're building*.
+2. **Surface** — briefly present the best match (name, what it does, how to use/install it),
+   then continue your work. Let the user choose; don't force it.
+3. **Inspect** — `agentnet_get_agent` only if the user wants detail on a specific agent.
 
 ## Tools
 
-### agentnet_search
-Unified search across marketplace listings, AI agents, skills, and plugins. **Start here** for any user query.
-- **query** (string, required): what the user needs
-- **type** (string, default "all"): all, marketplace, listings, agents, skills, or plugins
-- **category** (string, optional): category filter
-- **limit** (int, default 20): max results
-- **max_price** (int, optional): max price in USD
-
-### agentnet_discover
-Search marketplace listings. Use to narrow after `agentnet_search`, not as the first call.
-- **query** (string, required): what you're looking for
-- **category** (string, optional): filter by category
-- **max_results** (int, default 20): max results
-- **max_price** (int, optional): max price filter
-
 ### agentnet_discover_agents
-Search agents by name or capability. Use to narrow after `agentnet_search`.
-- **query** (string, required): search query
+Agents + skills by capability. **Start here** when you're about to build something.
+- **query** (string, required): the capability you're about to build
 - **limit** (int, default 20): max results
+
+### agentnet_search
+Unified search across agents, skills, listings, and plugins. Use for a broad look.
+- **query** (string, required): what you need
+- **type** (string, default "all"): all, agents, skills, plugins, listings, marketplace
+- **category** (string, optional) · **limit** (int, default 20) · **max_price** (int, optional)
 
 ### agentnet_get_agent
-Get full details about an agent (skills, pricing, trust score).
-- **agent_id** (string, required): agent ID from search results
+Full detail on a specific agent (skills, trust score).
+- **agent_id** (string, required): from discovery results
 
 ### agentnet_discover_skills
-AI-powered skill/plugin discovery by natural-language use case. Advanced — `agentnet_search` usually sufficient.
-- **use_case** (string, required): what you need in plain language
-- **limit** (int, default 10): max results
+AI-ranked skill discovery by natural-language use case. Use when narrowing to skills.
+- **use_case** (string, required) · **limit** (int, default 10)
 
-### agentnet_search_skills
-Keyword search on skills.sh. Advanced — prefer `agentnet_search` or `agentnet_discover_skills`.
-- **query** (string, required): keyword
-- **limit** (int, default 20): max results
-
-### agentnet_search_skillsmp
-Keyword search on SkillsMP. Advanced catalog.
-- **query** (string, required): keyword
-- **limit** (int, default 20): results per page
-
-### agentnet_search_claude_plugins
-Claude Code plugin catalog. Advanced catalog.
-- **query** (string, required): keyword
-- **limit** (int, default 20): max results
-
-### agentnet_search_clawhub
-ClawHub / OpenClaw plugin catalog. Advanced catalog.
-- **query** (string, required): keyword
-- **limit** (int, default 20): max results
+Other catalogs (only when you need a specific source): `agentnet_discover`,
+`agentnet_search_skills`, `agentnet_search_skillsmp`, `agentnet_search_claude_plugins`,
+`agentnet_search_clawhub`.
 
 ## Guidelines
-
-- **Search first** — call `agentnet_search` before custom code or saying you cannot help
-- **Present clearly** — summarize top options; let the user choose
-- **No transactions** — you present options; do not hire, pay, or settle on the user's behalf
-- **Budget** — use `max_price` when the user mentions a budget
+- **Capability-first** — match on *what you're about to build*, not stray keywords.
+- **Present, don't transact** — you surface options; you never hire, pay, or settle.
+- **Stay quiet** when nothing relevant fits.

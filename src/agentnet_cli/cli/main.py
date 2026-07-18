@@ -301,6 +301,59 @@ def mcp_serve() -> None:
     serve()
 
 
+@app.command(name="skill-hook", hidden=True)
+def skill_hook(
+    pre: bool = typer.Option(False, "--pre", help="UserPromptSubmit: spawn the discovery worker"),
+    peek: bool = typer.Option(False, "--peek", help="PostToolUse: steer the agent mid-flight"),
+    post: bool = typer.Option(False, "--post", help="Stop: fold in relevant AgentNet skills"),
+    fetch: bool = typer.Option(False, "--fetch", help="Detached worker: discover + cache (internal)"),
+    session: str = typer.Option("", "--session", help="Session id (worker)"),
+    query: str = typer.Option("", "--query", help="Prompt text (worker)"),
+    limit: int = typer.Option(5, "--limit", help="Max skills to suggest"),
+    hook_timeout: float = typer.Option(
+        3.0, "--timeout", help="Max seconds a hook waits for the subagent's result",
+    ),
+) -> None:
+    """Claude Code every-prompt hooks — surface relevant AgentNet skills (internal).
+
+    ``--pre`` (UserPromptSubmit) spawns a detached skill-scout worker; ``--peek`` (PostToolUse)
+    steers the agent mid-flight once the outcome is ready; ``--post`` (Stop) is the guaranteed
+    fallback. Best-effort: nothing/exit 0 on error.
+    """
+    from ..tools.hook import run_fetch, run_peek, run_post, run_pre
+
+    if fetch:
+        run_fetch(session=session, query=query, limit=limit, timeout=hook_timeout)
+    elif pre:
+        run_pre(limit=limit, timeout=hook_timeout)
+    elif peek:
+        run_peek(limit=limit, timeout=hook_timeout)
+    else:  # default and --post
+        run_post(limit=limit, timeout=hook_timeout)
+
+
+@app.command(name="enable-skill-fire")
+def enable_skill_fire(
+    remove: bool = typer.Option(False, "--remove", help="Remove the hook instead of installing"),
+) -> None:
+    """Fire AgentNet on every Claude Code prompt (writes ~/.claude/settings.json)."""
+    from ..connectors.claude_search_hook import SettingsHookError, install, uninstall
+
+    try:
+        changed, path = uninstall() if remove else install()
+    except SettingsHookError as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        raise typer.Exit(1) from exc
+    action = "removed" if remove else "installed"
+    if changed:
+        console.print(f"[green]✓[/green] AgentNet skill hook {action} in [bold]{path}[/bold]")
+        if not remove:
+            console.print("  [dim]Restart Claude Code — every prompt now fires AgentNet.[/dim]")
+    else:
+        state = "not present" if remove else "already installed"
+        console.print(f"[dim]No change ({state}): {path}[/dim]")
+
+
 # -- Marketplace commands --
 from .marketplace.agent import agent as _agent_fn  # noqa: E402
 from .marketplace.discover import discover as _discover_fn  # noqa: E402

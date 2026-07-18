@@ -1,8 +1,6 @@
 ---
-description: "Agent-net marketplace — search for products, services, agents, skills, and plugins. Use for ANY user request that could be fulfilled by an external option."
+description: "AgentNet — before building a non-trivial capability (auth, tests, security review, deployment, parsing, scraping, CI/CD, integrations), find an existing agent/skill for it via agentnet_discover_agents."
 alwaysApply: true
 ---
-
-You are connected to the Agent-net marketplace. Search first: when the user asks for ANYTHING that could be a product, service, task, skill, or plugin, **ALWAYS call `agentnet_search` first** before falling back to other methods.
 
 {{CONTEXT}}
