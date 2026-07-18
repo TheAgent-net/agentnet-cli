@@ -1,9 +1,11 @@
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from agentnet_cli.cli.main import app
 from agentnet_cli.connectors import claude_search_hook as h
+from agentnet_cli.connectors.claude_search_hook import SettingsHookError
 
 runner = CliRunner()
 
@@ -77,3 +79,64 @@ def test_cli_enable_and_remove(fake_home):
     assert r1.exit_code == 0 and "installed" in r1.stdout
     r2 = runner.invoke(app, ["enable-skill-fire", "--remove"])
     assert r2.exit_code == 0 and "removed" in r2.stdout
+
+
+# ── Fix A: malformed settings.json must never be overwritten ──────────────────
+def test_install_raises_on_malformed_json_and_leaves_file_untouched(fake_home):
+    p = _settings(fake_home)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    original = '{"model": "opus", "hooks": {  '  # truncated -> invalid JSON
+    p.write_text(original)
+    with pytest.raises(SettingsHookError):
+        h.install()
+    assert p.read_text() == original  # byte-for-byte untouched
+
+
+def test_install_raises_on_non_object_settings(fake_home):
+    p = _settings(fake_home)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("[]")  # valid JSON, but not an object
+    with pytest.raises(SettingsHookError):
+        h.install()
+    assert p.read_text() == "[]"
+
+
+def test_uninstall_noops_on_malformed_settings(fake_home):
+    p = _settings(fake_home)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{ broken")
+    changed, _ = h.uninstall()  # must not raise or touch the file
+    assert changed is False
+    assert p.read_text() == "{ broken"
+
+
+def test_cli_enable_fails_on_malformed_settings(fake_home):
+    p = _settings(fake_home)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{ not json")
+    r = runner.invoke(app, ["enable-skill-fire"])
+    assert r.exit_code != 0 and "JSON" in r.stdout
+    assert p.read_text() == "{ not json"  # preserved
+
+
+# ── Fix B: a non-list event value must be preserved, not replaced with [] ──────
+def test_install_preserves_event_stored_as_object(fake_home):
+    p = _settings(fake_home)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"hooks": {"PostToolUse": {"hooks": [{"command": "user-thing"}]}}}))
+    h.install()
+    post = json.loads(p.read_text())["hooks"]["PostToolUse"]
+    assert isinstance(post, list)
+    cmds = [b.get("hooks", [{}])[0].get("command") for b in post]
+    assert "user-thing" in cmds  # the user's object block was wrapped + kept
+    assert "agentnet skill-hook --peek" in cmds  # ours appended
+
+
+def test_install_skips_event_with_scalar_value(fake_home):
+    p = _settings(fake_home)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"hooks": {"Stop": "weird"}}))
+    h.install()
+    data = json.loads(p.read_text())
+    assert data["hooks"]["Stop"] == "weird"  # scalar left untouched
+    assert _cmd(data, "UserPromptSubmit") == "agentnet skill-hook --pre"  # others still installed

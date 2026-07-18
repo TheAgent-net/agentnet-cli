@@ -337,9 +337,13 @@ def enable_skill_fire(
     remove: bool = typer.Option(False, "--remove", help="Remove the hook instead of installing"),
 ) -> None:
     """Fire AgentNet on every Claude Code prompt (writes ~/.claude/settings.json)."""
-    from ..connectors.claude_search_hook import install, uninstall
+    from ..connectors.claude_search_hook import SettingsHookError, install, uninstall
 
-    changed, path = uninstall() if remove else install()
+    try:
+        changed, path = uninstall() if remove else install()
+    except SettingsHookError as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        raise typer.Exit(1) from exc
     action = "removed" if remove else "installed"
     if changed:
         console.print(f"[green]✓[/green] AgentNet skill hook {action} in [bold]{path}[/bold]")

@@ -17,6 +17,11 @@ from typing import Any
 
 from ..infra.paths import AgentName, agent_config_root
 
+
+class SettingsHookError(Exception):
+    """Raised when ~/.claude/settings.json exists but is malformed, so it must not be overwritten."""
+
+
 # event -> (command, matcher). matcher=None for non-tool-scoped events.
 _HOOKS: dict[str, tuple[str, str | None]] = {
     "UserPromptSubmit": ("agentnet skill-hook --pre", None),
@@ -30,13 +35,21 @@ def _settings_path():
 
 
 def _load(path) -> dict[str, Any]:
+    """Parse an existing settings.json to a dict.
+
+    Absent file -> ``{}`` (a fresh config). A file that *exists* but is unparseable or not a JSON
+    object is NOT the same as empty — overwriting it would erase the user's real config — so raise
+    ``SettingsHookError`` and let the caller preserve the file untouched.
+    """
     if not path.exists():
         return {}
     try:
         data = json.loads(path.read_text())
-        return data if isinstance(data, dict) else {}
-    except json.JSONDecodeError:
-        return {}
+    except (json.JSONDecodeError, OSError) as exc:
+        raise SettingsHookError(f"{path} is not valid JSON — fix it and re-run") from exc
+    if not isinstance(data, dict):
+        raise SettingsHookError(f"{path} is not a JSON object — fix it and re-run")
+    return data
 
 
 def _is_agentnet_cmd(cmd: Any) -> bool:
@@ -73,9 +86,16 @@ def install() -> tuple[bool, str]:
     changed = False
     for event, (command, matcher) in _HOOKS.items():
         blocks = hooks.get(event)
-        if not isinstance(blocks, list):
+        if blocks is None:
             blocks = []
             hooks[event] = blocks
+        elif isinstance(blocks, dict):
+            # A single hook block stored as an object — preserve it by wrapping, don't discard it.
+            blocks = [blocks]
+            hooks[event] = blocks
+        elif not isinstance(blocks, list):
+            # Some other scalar we don't understand — leave the user's value untouched.
+            continue
         if not _event_has_agentnet(blocks):
             blocks.append(_block(command, matcher))
             changed = True
@@ -86,9 +106,16 @@ def install() -> tuple[bool, str]:
 
 
 def uninstall() -> tuple[bool, str]:
-    """Remove the AgentNet every-prompt hooks from settings.json. Returns (changed, path)."""
+    """Remove the AgentNet every-prompt hooks from settings.json. Returns (changed, path).
+
+    A malformed settings file has nothing removable and must not be overwritten, so treat it as
+    a no-op rather than raising into the (best-effort) disconnect path.
+    """
     path = _settings_path()
-    data = _load(path)
+    try:
+        data = _load(path)
+    except SettingsHookError:
+        return False, str(path)
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
         return False, str(path)

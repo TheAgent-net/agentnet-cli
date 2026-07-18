@@ -50,14 +50,20 @@ class ClaudeConnector(AgentConnector):
         #    fold in relevant skills). It does NOT depend on the plugin marketplace
         #    flow (which errors on some Claude Code versions), so connect succeeds
         #    even if that fails.
+        from .claude_search_hook import SettingsHookError
         from .claude_search_hook import install as install_search_hook
 
-        install_search_hook()
+        errors: list[str] = []
+        try:
+            install_search_hook()
+        except SettingsHookError as exc:
+            # A malformed settings.json must not be overwritten; report and preserve it, but let
+            # the rest of connect (MCP + plugin) still run.
+            errors.append(str(exc))
 
         # 2. Best-effort: install the plugin for the discovery MCP tools and
         #    session hooks. `marketplace add` takes only <source> (no --scope).
         #    Failures here are non-fatal — the prompt hook above is already live.
-        errors: list[str] = []
         try:
             marketplace_src = _marketplace_source()
             proc = subprocess.run(
