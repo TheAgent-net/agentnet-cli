@@ -18,30 +18,60 @@ _USE_AGENT = "agentnet_cli.marketplace.client.PlatformClient.use_agent"
 _ENV = hook._SUBAGENT_ENV
 
 
-def _cache(outcome):
-    return json.dumps({"outcome": outcome})
+def _cache(outcome, final=True):
+    """Cached outcome. ``final=False`` = phase-1 list only (not yet actionable)."""
+    return json.dumps({"outcome": outcome, "final": final})
 
 
 # ── _render_list (the AgentNet recommendation list: name + why + link) ────────
 def test_render_list():
-    skills = {"A": {"url": "http://a", "repo": "r/a"}}
+    # `name (NN%) — description` only. No install commands (agents executed them) and no URLs —
+    # this block is meant to be reproduced to the user verbatim.
+    skills = {"A": {"url": "http://a", "repo": "r/a", "install_cmd": "npx add", "score": "88.6"}}
     out = hook._render_list([{"name": "A", "why": "helps"}], skills, limit=5)
-    assert out == "AgentNet found these skills for this task:\n- A — helps\n  http://a"
-    # no url -> just the name/why line
-    assert hook._render_list([{"name": "A", "why": "w"}], {}, limit=5).endswith("- A — w")
+    assert out == "AgentNet found these skills:\n\nA (89%) — helps"
+    assert "install" not in out and "http://a" not in out
+    # no score -> no percentage
+    assert hook._render_list([{"name": "A", "why": "w"}], {}, limit=5).endswith("A — w")
     assert hook._render_list([], {}, limit=5) == ""  # nothing relevant -> ""
 
 
 def test_render_list_respects_limit():
     rel = [{"name": f"S{i}", "why": "w"} for i in range(5)]
     out = hook._render_list(rel, {}, limit=2)
-    assert out.count("\n- ") == 2
+    assert len([ln for ln in out.splitlines() if ln.startswith("S")]) == 2
+
+
+def test_steer_reason_omits_agent_section_when_absent():
+    # A list-only outcome (no methodology reachable) still gets promoted to final. The steer must
+    # not tell the model to follow an AGENT ONLY section that isn't in the payload.
+    list_only = hook._compose_outcome("AgentNet found these skills:\n\nA — x", "")
+    steer = hook._steer_reason(list_only)
+    assert hook._AGENT_ONLY not in steer
+    assert "AGENT ONLY section" not in steer
+    assert hook._USER_BLOCK_START in steer  # still told to show the list
+
+    fold = hook._fold_context(list_only)
+    assert "AGENT ONLY section" not in fold
+
+    # ...but it is referenced when the section really is there.
+    full = hook._compose_outcome("AgentNet found these skills:\n\nA — x", "read /tmp/SKILL.md")
+    assert "AGENT ONLY section" in hook._steer_reason(full)
+    assert "AGENT ONLY section" in hook._fold_context(full)
 
 
 def test_compose_outcome():
-    # List then top-match content; degrades to either alone.
-    assert hook._compose_outcome("LIST", "CONTENT") == "LIST\n\nApplying the top match now:\nCONTENT"
-    assert hook._compose_outcome("LIST", "") == "LIST"
+    # The user-facing list is fenced apart from the agent-only path instruction, otherwise the
+    # agent collapses the whole thing into "AgentNet found a relevant skill, let me read it".
+    out = hook._compose_outcome("LIST", "CONTENT")
+    assert hook._USER_BLOCK_START in out and hook._USER_BLOCK_END in out
+    assert hook._AGENT_ONLY in out
+    assert "Reading the top match and applying it." in out
+    assert out.index("LIST") < out.index(hook._USER_BLOCK_END) < out.index("CONTENT")
+
+    # list only -> fenced user block, no agent section to leak
+    only = hook._compose_outcome("LIST", "")
+    assert "LIST" in only and hook._AGENT_ONLY not in only
     assert hook._compose_outcome("", "CONTENT") == "CONTENT"
 
 
@@ -81,7 +111,7 @@ _SKILL_INFO = {"repo": "r/foo", "install_cmd": "npx skills add r/foo@Foo",
 
 def _run_subagent(query="review my code",
                   stdout='{"skills":[{"name":"Foo","why":"helps"}]}',
-                  rc=0, has_claude=True, content="", agent="",
+                  rc=0, has_classifier=True, content="", agent="",
                   candidates=("- Foo (score 0.8): does foo", {"Foo": _SKILL_INFO})):
     captured = {}
 
@@ -91,8 +121,8 @@ def _run_subagent(query="review my code",
         return MagicMock(returncode=rc, stdout=stdout)
 
     def fake_which(name):
-        if name == "claude" and not has_claude:
-            return None
+        if name in ("claude", "cursor-agent") and not has_classifier:
+            return None  # no gate CLI at all
         return "/usr/bin/" + name
 
     content_mock = MagicMock(return_value=content)
@@ -113,8 +143,8 @@ def _run_subagent(query="review my code",
 def test_run_subagent_lists_then_applies_content():
     # Gate open + content fetched -> the recommendation LIST, then the top match's methodology.
     text, cap = _run_subagent(content="APPLY THIS SKILL METHODOLOGY", agent="broker")
-    assert "AgentNet found these skills" in text and "- Foo — helps" in text  # the list
-    assert "Applying the top match now:\nAPPLY THIS SKILL METHODOLOGY" in text  # the content
+    assert "AgentNet found these skills" in text and "Foo" in text  # the list
+    assert "APPLY THIS SKILL METHODOLOGY" in text and hook._AGENT_ONLY in text  # the content
     cmd = cap["cmd"]
     assert cmd[0].endswith("claude")
     for tok in ("-p", "--model", hook.SUBAGENT_MODEL, "--mcp-config",
@@ -127,18 +157,21 @@ def test_run_subagent_lists_then_applies_content():
 
 
 def test_run_subagent_falls_back_to_broker():
-    # Content unavailable (npx miss) -> list + brokered A2A recommendation.
+    # Content unavailable (npx miss) -> list + brokered A2A recommendation, explicitly labelled as
+    # not-on-disk so the agent doesn't hunt for files the Skills Agent merely cited.
     text, cap = _run_subagent(content="", agent="Use skills/skillssh/foo — it does X.")
-    assert "- Foo — helps" in text  # the list
-    assert "Applying the top match now:\nUse skills/skillssh/foo — it does X." in text
+    assert "Foo" in text  # the list
+    assert "Use skills/skillssh/foo — it does X." in text
+    assert "do not look for these files on disk" in text
     cap["negotiate"].assert_called_once()
 
 
 def test_run_subagent_falls_back_to_list():
-    # Neither content nor broker -> the recommendation list alone still surfaces the skills.
+    # Neither content nor broker -> the list alone still surfaces the skills (name + description).
     text, cap = _run_subagent(content="", agent="")
-    assert "AgentNet found these skills" in text and "- Foo — helps" in text and "http://foo" in text
-    assert "Applying the top match now" not in text  # no content to apply
+    assert "AgentNet found these skills" in text and "Foo" in text
+    assert "install" not in text  # never hand the agent a command it will run
+    assert hook._AGENT_ONLY not in text  # no content to apply
     cap["negotiate"].assert_called_once()
 
 
@@ -154,7 +187,7 @@ def test_run_subagent_best_effort():
     assert _run_subagent(stdout='{"skills":[]}')[0] == ""   # classifier: nothing relevant
     assert _run_subagent(stdout="not json")[0] == ""        # unparseable
     assert _run_subagent(rc=1)[0] == ""                     # subagent failed
-    assert _run_subagent(has_claude=False)[0] == ""         # no claude binary
+    assert _run_subagent(has_classifier=False)[0] == ""     # no gate CLI (claude or cursor-agent)
     assert _run_subagent(candidates=("", {}))[0] == ""      # no skill candidates
     assert hook.run_subagent("", limit=5, timeout=30) == ""  # empty prompt
 
@@ -171,6 +204,86 @@ def test_run_subagent_timeout_is_best_effort():
         patch("agentnet_cli.tools.hook.subprocess.run", boom),
     ):
         assert hook.run_subagent("x", limit=5, timeout=1) == ""
+
+
+# ── classifier backends (claude -p / cursor-agent -p, with fallback) ─────────
+def _which_all(name):
+    return "/usr/bin/" + name
+
+
+def test_cursor_classifier_argv(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        captured["env"] = kw.get("env", {})
+        return MagicMock(returncode=0, stdout='{"skills":[]}')
+
+    monkeypatch.setattr("agentnet_cli.tools.hook.shutil.which", _which_all)
+    monkeypatch.setattr("agentnet_cli.tools.hook.subprocess.run", fake_run)
+    monkeypatch.delenv(hook._CURSOR_MODEL_ENV, raising=False)
+    hook._run_cursor_classifier("REQUEST_TEXT:\nx\n\nCANDIDATES:\n- foo", timeout=10)
+    cmd = captured["cmd"]
+    assert cmd[0].endswith("cursor-agent")
+    for tok in ("-p", "--mode", "ask", "--output-format", "text", "--trust"):
+        assert tok in cmd
+    assert "--model" not in cmd  # default Cursor model unless overridden
+    assert hook._CLASSIFIER_PROMPT in cmd[-1] and "REQUEST_TEXT" in cmd[-1]  # prompt + candidates
+    assert captured["env"].get(hook._SUBAGENT_ENV) == "1"  # recursion guard
+
+
+def test_cursor_classifier_model_override(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0, stdout="{}")
+
+    monkeypatch.setattr("agentnet_cli.tools.hook.shutil.which", _which_all)
+    monkeypatch.setattr("agentnet_cli.tools.hook.subprocess.run", fake_run)
+    monkeypatch.setenv(hook._CURSOR_MODEL_ENV, "gpt-5-mini")
+    hook._run_cursor_classifier("m", timeout=5)
+    assert "--model" in captured["cmd"] and "gpt-5-mini" in captured["cmd"]
+
+
+def test_cursor_classifier_absent(monkeypatch):
+    monkeypatch.setattr("agentnet_cli.tools.hook.shutil.which", lambda n: None)
+    assert hook._run_cursor_classifier("m", timeout=5) is None
+
+
+def test_classify_uses_requested_backend(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd[0])
+        return MagicMock(returncode=0, stdout='{"skills":[{"name":"A","why":"w"}]}')
+
+    monkeypatch.setattr("agentnet_cli.tools.hook.shutil.which", _which_all)
+    monkeypatch.setattr("agentnet_cli.tools.hook.subprocess.run", fake_run)
+    assert hook._classify("q", "- A: x", timeout=10, backend="cursor") == [{"name": "A", "why": "w"}]
+    assert any("cursor-agent" in c for c in calls)  # ran cursor-agent
+    assert not any(c.endswith("claude") for c in calls)  # not claude — cursor succeeded
+
+
+def test_classify_falls_back_to_other_backend(monkeypatch):
+    calls = []
+
+    def fake_which(n):
+        return None if n == "cursor-agent" else "/usr/bin/" + n
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd[0])
+        return MagicMock(returncode=0, stdout='{"skills":[]}')
+
+    monkeypatch.setattr("agentnet_cli.tools.hook.shutil.which", fake_which)
+    monkeypatch.setattr("agentnet_cli.tools.hook.subprocess.run", fake_run)
+    hook._classify("q", "- A: x", timeout=10, backend="cursor")  # requested cursor is absent
+    assert any(c.endswith("claude") for c in calls)  # fell back to claude
+
+
+def test_classify_no_backend(monkeypatch):
+    monkeypatch.setattr("agentnet_cli.tools.hook.shutil.which", lambda n: None)
+    assert hook._classify("q", "- A: x", timeout=10, backend="cursor") == []
 
 
 # ── _negotiate_via_platform (brokered A2A via use_agent) ─────────────────────
@@ -212,28 +325,45 @@ def test_skills_agent_id_default_and_override(monkeypatch):
 
 
 # ── _summarize_skill (condense `skills use` output to header + on-disk path) ──
-_USE_OUTPUT = (
-    "You are being given a Skill to execute for the user's next request.\n\n"
-    "Use the following SKILL.md as your instructions:\n\n"
-    "<SKILL.md>\n"
-    "---\n"
-    "name: launchdarkly-flag-create\n"
-    'description: "Create and configure LaunchDarkly feature flags."\n'
-    "license: Apache-2.0\n"
-    "---\n\n"
-    "# LaunchDarkly Flag Create\n\nlong methodology body...\n"
-    "</SKILL.md>\n\n"
-    "Supporting files for this skill were downloaded to:\n"
-    "/tmp/skills-use-abc/launchdarkly-flag-create\n\n"
-    "When the SKILL.md references relative paths, read them from that directory.\n"
-)
+def _use_output(download_dir, *, name="launchdarkly-flag-create", desc=None):
+    """`skills use` stdout pointing at ``download_dir``.
+
+    The dir must really exist — `_summarize_skill` verifies the SKILL.md is on disk before
+    claiming it (see test_summarize_skill_rejects_nonexistent_path).
+    """
+    desc = desc if desc is not None else '"Create and configure LaunchDarkly feature flags."'
+    return (
+        "You are being given a Skill to execute for the user's next request.\n\n"
+        "Use the following SKILL.md as your instructions:\n\n"
+        "<SKILL.md>\n"
+        "---\n"
+        f"name: {name}\n"
+        f"description: {desc}\n"
+        "license: Apache-2.0\n"
+        "---\n\n"
+        "# LaunchDarkly Flag Create\n\nlong methodology body...\n"
+        "</SKILL.md>\n\n"
+        "Supporting files for this skill were downloaded to:\n"
+        f"{download_dir}\n\n"
+        "When the SKILL.md references relative paths, read them from that directory.\n"
+    )
 
 
-def test_summarize_skill_with_references():
+def _real_skill_dir(tmp_path, name="launchdarkly-flag-create"):
+    d = tmp_path / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text("# on disk\n")
+    return d
+
+
+def test_summarize_skill_with_references(tmp_path):
     # Skill downloaded a dir (has references) -> point at that dir's SKILL.md, don't dump the body.
-    out = hook._summarize_skill(_USE_OUTPUT, slug="launchdarkly-flag-create", desc_hint="x")
+    d = _real_skill_dir(tmp_path)
+    out = hook._summarize_skill(
+        _use_output(d), slug="launchdarkly-flag-create", desc_hint="x"
+    )
     assert out.startswith("launchdarkly-flag-create — Create and configure LaunchDarkly")
-    assert "/tmp/skills-use-abc/launchdarkly-flag-create/SKILL.md" in out
+    assert f"{d}/SKILL.md" in out
     assert "Read it and follow it" in out
     assert "long methodology body" not in out  # the full SKILL.md is NOT dumped in
 
@@ -248,30 +378,72 @@ def test_summarize_skill_single_file():
     assert "# body" not in out.split("on disk")[0]  # body not inlined into the header
 
 
+def test_summarize_skill_reads_yaml_block_scalar_description(tmp_path):
+    # Regression: `description: >` (and `|`) put the text on following indented lines. A line-regex
+    # captured only the marker, so the injected list read "progress-report — >".
+    d = _real_skill_dir(tmp_path, name="progress-report")
+    raw = (
+        "<SKILL.md>\n"
+        "---\n"
+        "name: progress-report\n"
+        "description: >\n"
+        "  Displays progress dashboard showing phase completion, blocked tasks,\n"
+        "  and remaining work estimate.\n"
+        "version: 0.0.1\n"
+        "---\n"
+        "body\n"
+        "</SKILL.md>\n"
+        f"Supporting files for this skill were downloaded to:\n{d}\n"
+    )
+    header = hook._summarize_skill(raw, slug="progress-report", desc_hint="").splitlines()[0]
+    assert header.startswith("progress-report — Displays progress dashboard")
+    assert ">" not in header
+
+
 def test_summarize_skill_unparseable():
     assert hook._summarize_skill("no <skill> block here", slug="x", desc_hint="") == ""
 
 
-def test_summarize_skill_caps_description():
-    long = "d" * 500
+def test_summarize_skill_rejects_nonexistent_path():
+    # Regression: we claimed a SKILL.md was "on disk" without checking. The agent hunted for the
+    # file, failed, and abandoned the skill ("path wasn't on disk, so I built it manually").
     raw = (
-        f"<SKILL.md>\n---\nname: s\ndescription: {long}\n---\n</SKILL.md>\n"
-        "Supporting files for this skill were downloaded to:\n/tmp/p\n"
+        "<SKILL.md>\n---\nname: ghost\ndescription: d\n---\nbody\n</SKILL.md>\n"
+        "Supporting files for this skill were downloaded to:\n/nonexistent/ghost-skill-dir\n"
     )
+    assert hook._summarize_skill(raw, slug="ghost", desc_hint="") == ""
+
+
+def test_broker_fallback_is_labelled_as_not_on_disk(monkeypatch):
+    # The Skills Agent cites conventional install paths for skills that were never installed here.
+    monkeypatch.setattr("agentnet_cli.tools.hook._build_content_outcome", lambda *a, **k: "")
+    monkeypatch.setattr(
+        "agentnet_cli.tools.hook._negotiate_via_platform",
+        lambda *a, **k: "Use ~/.agentnet/skills/foo/bar/SKILL.md",
+    )
+    out = hook._upgrade_outcome("q", [{"name": "A", "why": "w"}], {}, timeout=5)
+    assert "do not look for these files on disk" in out
+    assert "Skills Agent" in out
+
+
+def test_summarize_skill_caps_description(tmp_path):
+    d = _real_skill_dir(tmp_path, name="s")
+    raw = _use_output(d, name="s", desc="d" * 500)
     header = hook._summarize_skill(raw, slug="s", desc_hint="").splitlines()[0]
     assert header.endswith("…") and len(header) <= hook._DESC_CAP + len("s — ")
 
 
 # ── _skill_content (npx skills use <repo>@<slug> -> concise header, no install) ─
-def test_skill_content():
+def test_skill_content(tmp_path):
+    d = _real_skill_dir(tmp_path)
     with (
         patch("agentnet_cli.tools.hook.shutil.which", side_effect=lambda n: "/usr/bin/" + n),
         patch("agentnet_cli.tools.hook.subprocess.run",
-              return_value=MagicMock(returncode=0, stdout=_USE_OUTPUT)) as run,
+              return_value=MagicMock(returncode=0, stdout=_use_output(d))) as run,
     ):
         out = hook._skill_content("ld/agent", "launchdarkly-flag-create", desc_hint="x", timeout=5)
     assert "launchdarkly-flag-create — Create and configure" in out
-    assert "/tmp/skills-use-abc/launchdarkly-flag-create" in out
+    assert str(d) in out
     cmd = run.call_args.args[0]
     assert cmd[1:] == ["-y", "skills", "use", "ld/agent@launchdarkly-flag-create"]
 
@@ -318,8 +490,57 @@ def test_fetch_composes_list_and_content(tmp_path):
     with p[0], p[1], p[2], p[3], p[4]:
         hook.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     outcome = json.loads(cache.read_text())["outcome"]
-    assert "AgentNet found these skills" in outcome and "- Foo — helps" in outcome  # the list
-    assert "Applying the top match now:\nCONTENT skill" in outcome  # the content
+    assert "AgentNet found these skills" in outcome and "Foo" in outcome  # the list
+    assert "CONTENT skill" in outcome and hook._AGENT_ONLY in outcome  # the content
+
+
+def test_fetch_phase1_is_not_final_phase2_is(tmp_path):
+    # Phase 1 must be non-final (list only); phase 2 marks it final once content is attached.
+    cache = tmp_path / "s.json"
+    seen = []
+    real_write = hook._cache_write
+
+    def spy(path, outcome, *, final=True):
+        seen.append(final)
+        real_write(path, outcome, final=final)
+
+    p = _patch_fetch(cache, upgrade="CONTENT skill")
+    with p[0], p[1], p[2], p[3], p[4], patch("agentnet_cli.tools.hook._cache_write", spy):
+        hook.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
+    assert seen == [False, True]  # phase 1 non-final, phase 2 final
+    assert json.loads(cache.read_text())["final"] is True
+
+
+def test_fetch_promotes_list_to_final_when_no_content(tmp_path):
+    # No content reachable -> promote the list to final so the steer isn't blocked forever.
+    cache = tmp_path / "s.json"
+    p = _patch_fetch(cache, upgrade="")
+    with p[0], p[1], p[2], p[3], p[4]:
+        hook.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
+    data = json.loads(cache.read_text())
+    assert data["final"] is True and "Foo" in data["outcome"]
+    # Regression: the list-only final outcome MUST carry the user-block delimiters the steer tells
+    # the agent to reproduce — earlier it cached the raw list, so those markers were absent.
+    assert hook._USER_BLOCK_START in data["outcome"] and hook._USER_BLOCK_END in data["outcome"]
+    steer = hook._steer_reason(data["outcome"])
+    assert hook._USER_BLOCK_START in steer  # delimiter referenced == delimiter present
+
+
+def test_fetch_phase1_outcome_is_fenced(tmp_path):
+    # Even the non-final phase-1 cache is fenced, so a steer never references absent delimiters.
+    cache = tmp_path / "s.json"
+    writes = []
+    real = hook._cache_write
+
+    def spy(path, outcome, *, final=True):
+        writes.append((outcome, final))
+        real(path, outcome, final=final)
+
+    p = _patch_fetch(cache, upgrade="CONTENT skill")
+    with p[0], p[1], p[2], p[3], p[4], patch("agentnet_cli.tools.hook._cache_write", spy):
+        hook.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
+    phase1_outcome, phase1_final = writes[0]
+    assert phase1_final is False and hook._USER_BLOCK_START in phase1_outcome
 
 
 def test_fetch_skips_upgrade_after_steer(tmp_path):
@@ -331,7 +552,7 @@ def test_fetch_skips_upgrade_after_steer(tmp_path):
     with p[0], p[1], p[2], p[3], p[4]:
         hook.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     outcome = json.loads(cache.read_text())["outcome"]
-    assert "- Foo — helps" in outcome and "CONTENT skill" not in outcome  # stayed the list
+    assert "Foo" in outcome and "CONTENT skill" not in outcome  # stayed the list
 
 
 def test_fetch_keeps_list_when_upgrade_empty(tmp_path):
@@ -341,8 +562,18 @@ def test_fetch_keeps_list_when_upgrade_empty(tmp_path):
     with p[0], p[1], p[2], p[3], p[4]:
         hook.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     outcome = json.loads(cache.read_text())["outcome"]
-    assert "AgentNet found these skills" in outcome and "- Foo — helps" in outcome
-    assert "Applying the top match now" not in outcome
+    assert "AgentNet found these skills" in outcome and "Foo" in outcome
+    assert hook._AGENT_ONLY not in outcome
+
+
+def test_fetch_runs_auto_update_off_critical_path(monkeypatch):
+    # The detached worker is where the CLI auto-update runs — once per turn, off the agent's
+    # critical path (the synchronous hooks skip it; see cli/main.py). Fires even before discovery.
+    mau = MagicMock()
+    monkeypatch.setattr("agentnet_cli.cli.core.updater.maybe_auto_update", mau)
+    monkeypatch.setattr("agentnet_cli.tools.hook._fetch_skill_candidates", lambda *a, **k: ("", {}))
+    hook.run_fetch(session="s1", query="do a thing", limit=6, timeout=3.0)
+    mau.assert_called_once()
 
 
 def test_fetch_writes_nothing_when_gate_closed(tmp_path):
@@ -402,6 +633,31 @@ def test_peek_steers_once_across_duplicate_hooks(tmp_path, monkeypatch, capsys):
         hook.run_peek(limit=5, timeout=3.0)
         outs.append(capsys.readouterr().out)
     assert sum(bool(o) for o in outs) == 1  # exactly one steered
+
+
+def test_peek_skips_non_final_outcome(tmp_path, monkeypatch, capsys):
+    # Regression: the phase-1 list has no methodology. Steering on it hands the agent nothing to
+    # apply, so the peek must wait for the content upgrade instead of burning the one steer.
+    cache = tmp_path / "s.json"
+    cache.write_text(_cache("AgentNet found these skills:\n- Foo", final=False))
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setattr("agentnet_cli.tools.hook._cache_path", lambda s: cache)
+    _stdin(monkeypatch, {"session_id": "s"})
+    hook.run_peek(limit=5, timeout=3.0)
+    assert capsys.readouterr().out == ""            # no steer
+    assert not hook._emit_marker(cache).exists()    # and the claim is still available
+
+
+def test_post_accepts_non_final_as_last_chance(tmp_path, monkeypatch, capsys):
+    # Stop is the final surface for the turn — take the list rather than surfacing nothing.
+    cache = tmp_path / "s.json"
+    cache.write_text(_cache("LIST ONLY", final=False))
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setattr("agentnet_cli.tools.hook._cache_path", lambda s: cache)
+    _stdin(monkeypatch, {"session_id": "s"})
+    hook.run_post(limit=5, timeout=0.2)
+    out = json.loads(capsys.readouterr().out)
+    assert "LIST ONLY" in out["hookSpecificOutput"]["additionalContext"]
 
 
 def test_peek_noop_when_not_ready(tmp_path, monkeypatch, capsys):

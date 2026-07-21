@@ -46,11 +46,20 @@ class CursorConnector(AgentConnector):
         perms_path = self._write_permissions(root)
         files_created.append(perms_path)
 
+        # Layer 4: every-prompt skill-fire hooks (~/.cursor/hooks.json)
+        from .cursor_hook import install as install_hooks
+
+        install_hooks()
+
         return ConnectionResult(
             success=True, files_created=files_created, mcp_entry=mcp_entry,
         )
 
     def disconnect(self, connection_manifest: dict[str, Any]) -> bool:
+        from .cursor_hook import uninstall as uninstall_hooks
+
+        uninstall_hooks()
+
         deleted: list[Path] = []
         for path_str in connection_manifest.get("files_created", []):
             p = Path(path_str)

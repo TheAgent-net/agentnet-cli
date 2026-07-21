@@ -18,6 +18,10 @@ app = typer.Typer(
 )
 console = Console()
 
+# Internal hook commands that run on the agent's critical path — the callback skips auto-update for
+# these so a tool call is never blocked; the detached worker handles it instead.
+_HOOK_COMMANDS = {"skill-hook", "cursor-hook", "hermes-hook"}
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -40,12 +44,17 @@ def main(
     if dev:
         os.environ.setdefault("AGENTNET_ENV", "development")
 
-    try:
-        from .core.updater import maybe_auto_update  # noqa: PLC0415
+    # The hooks shell out to `agentnet` and fire on the agent's critical path (prompt submit, each
+    # tool call, turn end), so the auto-update must NOT run here — a due PyPI check would block a
+    # tool call. The detached `--fetch` worker runs it instead (see tools/hook.py::run_fetch), once
+    # per turn, off the critical path. Every non-hook command still auto-updates as before.
+    if not (len(sys.argv) > 1 and sys.argv[1] in _HOOK_COMMANDS):
+        try:
+            from .core.updater import maybe_auto_update  # noqa: PLC0415
 
-        maybe_auto_update(quiet=True)
-    except Exception:
-        pass
+            maybe_auto_update(quiet=True)
+        except Exception:
+            pass
 
     if os.environ.get("CLAUDECODE"):
         print(
@@ -309,7 +318,10 @@ def skill_hook(
     fetch: bool = typer.Option(False, "--fetch", help="Detached worker: discover + cache (internal)"),
     session: str = typer.Option("", "--session", help="Session id (worker)"),
     query: str = typer.Option("", "--query", help="Prompt text (worker)"),
-    limit: int = typer.Option(5, "--limit", help="Max skills to suggest"),
+    limit: int = typer.Option(6, "--limit", help="Max skills to suggest"),
+    classifier: str = typer.Option(
+        "claude", "--classifier", help="Gate CLI backend: claude | cursor (worker)",
+    ),
     hook_timeout: float = typer.Option(
         3.0, "--timeout", help="Max seconds a hook waits for the subagent's result",
     ),
@@ -323,13 +335,67 @@ def skill_hook(
     from ..tools.hook import run_fetch, run_peek, run_post, run_pre
 
     if fetch:
-        run_fetch(session=session, query=query, limit=limit, timeout=hook_timeout)
+        run_fetch(
+            session=session, query=query, limit=limit, timeout=hook_timeout, classifier=classifier
+        )
     elif pre:
         run_pre(limit=limit, timeout=hook_timeout)
     elif peek:
         run_peek(limit=limit, timeout=hook_timeout)
     else:  # default and --post
         run_post(limit=limit, timeout=hook_timeout)
+
+
+@app.command(name="cursor-hook", hidden=True)
+def cursor_hook(
+    pre: bool = typer.Option(False, "--pre", help="beforeSubmitPrompt: spawn the discovery worker"),
+    peek: bool = typer.Option(False, "--peek", help="preToolUse: hard-nudge the agent (deny-once)"),
+    post: bool = typer.Option(False, "--post", help="stop: fold in relevant AgentNet skills"),
+    limit: int = typer.Option(6, "--limit", help="Max skills to suggest"),
+    hook_timeout: float = typer.Option(
+        3.0, "--timeout", help="Max seconds a hook waits for the worker's result",
+    ),
+) -> None:
+    """Cursor agent hooks — surface relevant AgentNet skills (internal).
+
+    ``--pre`` (beforeSubmitPrompt) spawns the shared discovery worker; ``--peek`` (preToolUse)
+    hard-nudges by denying the first tool call once and feeding the skill to the agent; ``--post``
+    (stop) is the followup fallback. Best-effort: nothing/exit 0 on error.
+    """
+    from ..tools.cursor_hook import run_cursor_peek, run_cursor_post, run_cursor_pre
+
+    if pre:
+        run_cursor_pre(limit=limit, timeout=hook_timeout)
+    elif peek:
+        run_cursor_peek(limit=limit, timeout=hook_timeout)
+    else:  # default and --post
+        run_cursor_post(limit=limit, timeout=hook_timeout)
+
+
+@app.command(name="hermes-hook", hidden=True)
+def hermes_hook(
+    pre: bool = typer.Option(False, "--pre", help="pre_llm_call: spawn the discovery worker"),
+    peek: bool = typer.Option(False, "--peek", help="pre_tool_call: hard-nudge the agent"),
+    post: bool = typer.Option(False, "--post", help="pre_verify: keep the turn going (fallback)"),
+    limit: int = typer.Option(6, "--limit", help="Max skills to suggest"),
+    hook_timeout: float = typer.Option(
+        3.0, "--timeout", help="Max seconds a hook waits for the worker's result",
+    ),
+) -> None:
+    """Hermes shell hooks — surface relevant AgentNet skills (internal).
+
+    ``--pre`` (pre_llm_call) spawns the shared discovery worker; ``--peek`` (pre_tool_call) blocks
+    one tool call and hands the skill back to the model; ``--post`` (pre_verify) keeps the turn
+    going as a fallback. Best-effort: ``{}``/exit 0 on error.
+    """
+    from ..tools.hermes_hook import run_hermes_peek, run_hermes_post, run_hermes_pre
+
+    if pre:
+        run_hermes_pre(limit=limit, timeout=hook_timeout)
+    elif peek:
+        run_hermes_peek(limit=limit, timeout=hook_timeout)
+    else:  # default and --post
+        run_hermes_post(limit=limit, timeout=hook_timeout)
 
 
 @app.command(name="enable-skill-fire")
