@@ -39,7 +39,13 @@ def _load(path) -> dict[str, Any]:
 
 
 def _is_agentnet_cmd(cmd: Any) -> bool:
-    return isinstance(cmd, str) and cmd.startswith("agentnet cursor-hook")
+    if not isinstance(cmd, str):
+        return False
+    parts = cmd.split()
+    if len(parts) < 2:
+        return False
+    exe = parts[0].rsplit("/", 1)[-1]
+    return exe == "agentnet" and parts[1] == "cursor-hook"
 
 
 def _event_has_agentnet(entries: list[Any]) -> bool:
