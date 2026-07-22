@@ -181,6 +181,17 @@ def test_cli_cursor_hook_peek(tmp_path, monkeypatch):
 
 
 # ── connector: ~/.cursor/hooks.json install / uninstall ───────────────────────
+def test_connector_only_claims_its_own_command():
+    # Parsed ownership, not a prefix: never swallow an unrelated user hook on install/uninstall.
+    assert conn._is_agentnet_cmd("agentnet cursor-hook --pre")
+    assert conn._is_agentnet_cmd("/usr/local/bin/agentnet cursor-hook --peek")
+    assert not conn._is_agentnet_cmd("agentnet cursor-hook-wrapper --pre")  # different sub-command
+    assert not conn._is_agentnet_cmd("agentnet-helper cursor-hook --pre")  # different binary
+    assert not conn._is_agentnet_cmd("agentnet skill-hook --pre")  # the Claude hook, not ours
+    assert not conn._is_agentnet_cmd("agentnet")
+    assert not conn._is_agentnet_cmd(None)
+
+
 def test_connector_install_idempotent_then_uninstall(tmp_path, monkeypatch):
     hooks_path = tmp_path / ".cursor" / "hooks.json"
     monkeypatch.setattr("agentnet_cli.connectors.cursor_hook._hooks_path", lambda: hooks_path)

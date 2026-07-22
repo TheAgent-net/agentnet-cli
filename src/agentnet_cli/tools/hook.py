@@ -324,8 +324,14 @@ def _run_hermes_classifier(msg: str, *, timeout: float) -> str | None:
 
     Hermes' advantage over the CLI backends: no subprocess and no separate auth — the gateway
     helpers resolve the user's configured model *and* provider credentials (API keys, base URLs,
-    OAuth, credential pools), so this works against custom endpoints too. Tool access is disabled
-    and iterations are pinned to 1 so it can only classify.
+    OAuth, credential pools), so this works against custom endpoints too.
+
+    ``skip_memory=False`` loads the user's memory store + profile so the gate can weigh relevance
+    against *this* user's context (stack, preferences) — per-user recommendations. It is only a
+    context signal: the ``memory`` toolset stays in ``disabled_toolsets`` (the gate reads memory but
+    can't spend its single iteration calling memory tools), and ``max_iterations=1`` + the disabled
+    toolsets keep it to one classify turn. (Personalising *discovery* — which skills get fetched —
+    is the higher-leverage follow-up; this only reweights the already-fetched candidates.)
 
     Only importable when running inside Hermes' venv (``connect hermes`` installs agentnet there);
     returns None otherwise so the caller falls back to a CLI backend.
@@ -341,7 +347,7 @@ def _run_hermes_classifier(msg: str, *, timeout: float) -> str | None:
             **_resolve_runtime_agent_kwargs(),
             quiet_mode=True,
             skip_context_files=True,
-            skip_memory=True,
+            skip_memory=False,  # share the user's memory/profile for per-user relevance
             max_iterations=1,
             disabled_toolsets=["delegation", "memory", "terminal", "files", "web"],
         )

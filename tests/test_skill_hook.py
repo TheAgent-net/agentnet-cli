@@ -286,6 +286,42 @@ def test_classify_no_backend(monkeypatch):
     assert hook._classify("q", "- A: x", timeout=10, backend="cursor") == []
 
 
+def test_hermes_classifier_shares_memory(monkeypatch):
+    # The in-process Hermes gate loads the user's memory/profile (skip_memory=False) so relevance
+    # is personalized per user — but the memory *tool* stays disabled so the one-shot gate can't
+    # burn its single iteration calling it. (Hermes modules aren't importable here -> inject fakes.)
+    import sys
+    import types
+
+    captured = {}
+
+    class FakeAIAgent:
+        def __init__(self, **kw):
+            captured.update(kw)
+
+        def run_conversation(self, prompt):
+            captured["prompt"] = prompt
+            return {"final_response": '{"skills":[{"name":"A","why":"w"}]}'}
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = FakeAIAgent
+    fake_gateway = types.ModuleType("gateway")
+    fake_gateway_run = types.ModuleType("gateway.run")
+    fake_gateway_run._resolve_gateway_model = lambda: "provider/model"
+    fake_gateway_run._resolve_runtime_agent_kwargs = lambda: {"api_key": "k"}
+    fake_gateway.run = fake_gateway_run
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+    monkeypatch.setitem(sys.modules, "gateway", fake_gateway)
+    monkeypatch.setitem(sys.modules, "gateway.run", fake_gateway_run)
+
+    out = hook._run_hermes_classifier("REQUEST_TEXT:\nx\n\nCANDIDATES:\n- A", timeout=10)
+    assert out == '{"skills":[{"name":"A","why":"w"}]}'
+    assert captured["skip_memory"] is False  # memory shared for per-user relevance
+    assert "memory" in captured["disabled_toolsets"]  # tool still disabled (one-shot gate)
+    assert captured["max_iterations"] == 1
+    assert hook._CLASSIFIER_PROMPT in captured["prompt"]
+
+
 # ── _negotiate_via_platform (brokered A2A via use_agent) ─────────────────────
 def test_negotiate_via_platform_happy():
     with (
