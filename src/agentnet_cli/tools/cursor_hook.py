@@ -1,8 +1,8 @@
-"""Cursor agent hooks — surface relevant AgentNet skills, reusing the Claude worker.
+"""Cursor agent hooks — surface relevant AgentNet skills, reusing the shared skillfire pipeline.
 
 Cursor's hooks (``~/.cursor/hooks.json``) mirror the Claude three-event flow, but the injection
-primitives differ, so only the thin I/O adapter changes — the worker (``skill-hook --fetch``),
-session cache, and atomic once-claims are shared verbatim from :mod:`agentnet_cli.tools.hook`.
+primitives differ, so only the thin I/O adapter changes — the worker, session cache, and atomic
+once-claims are shared verbatim via the :mod:`agentnet_cli.tools.skillfire` port.
 
 - **beforeSubmitPrompt** -> ``cursor-hook --pre``: spawn the detached worker, then allow the
   prompt (``{"continue": true}``). This event can only allow/block — it cannot inject — so it is
@@ -23,16 +23,9 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import subprocess
 import sys
-import time
 
-from . import hook as _h
-
-# Prefix on every injected message; also the loop guard — a prompt starting with this is our own
-# stop-followup coming back through beforeSubmitPrompt, so --pre skips it instead of re-spawning.
-_AGENTNET_SENTINEL = "[AgentNet]"
+from . import skillfire
 
 
 def _session(event: dict) -> str:
@@ -44,88 +37,47 @@ def _emit(obj: dict) -> None:
     sys.stdout.flush()
 
 
-def _deny_message(outcome: str) -> str:
-    """Cursor's hard-nudge payload — the same framing as the Claude/Hermes steer.
-
-    Kept as one shared string so a wording fix (e.g. "reproduce the fenced user block exactly")
-    lands on every harness at once; they previously drifted and Cursor was the one that never told
-    the agent to display the list.
-    """
-    return _h._steer_reason(outcome)
-
-
 def run_cursor_pre(*, limit: int, timeout: float) -> None:
     """beforeSubmitPrompt: spawn the detached worker, then allow the prompt.
 
     Spawn-once per (conversation, prompt) so duplicate registrations spawn one worker; skips our
     own ``[AgentNet]`` stop-followup so the fallback can't loop.
     """
-    if os.environ.get(_h._SUBAGENT_ENV):
+    if os.environ.get(skillfire.SUBAGENT_ENV):
         _emit({"continue": True})
         return
-    event = _h._read_event()
+    event = skillfire.read_event()
     if event is None:
         _emit({"continue": True})
         return
-    prompt = _h._prompt_from_event(event)
+    prompt = skillfire.prompt_from_event(event)
     session = _session(event)
-    if not prompt or prompt.startswith(_AGENTNET_SENTINEL):
+    if not prompt or prompt.startswith(skillfire.AGENTNET_SENTINEL):
         _emit({"continue": True})  # nothing to do / our own followup — never re-spawn
         return
-    if not _h._claim(_h._spawn_marker(session, prompt)):
-        _emit({"continue": True})  # a duplicate --pre already spawned the worker
-        return
-    # Winner: drop the previous prompt's outcome + steer claim so this prompt starts fresh.
-    cache = _h._cache_path(session)
-    for stale in (cache, _h._emit_marker(cache)):
-        try:
-            stale.unlink(missing_ok=True)
-        except Exception:  # noqa: BLE001
-            pass
-    exe = shutil.which("agentnet") or sys.argv[0]
-    try:
-        subprocess.Popen(  # noqa: S603 — detached discovery, never awaited
-            [
-                exe, "skill-hook", "--fetch",
-                "--session", session, "--query", prompt,
-                "--limit", str(limit), "--timeout", str(timeout),
-                "--classifier", "cursor",  # gate on the user's Cursor model, not claude
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except Exception:  # noqa: BLE001 — best-effort: never block the prompt
-        pass
+    skillfire.spawn_worker(session, prompt, limit=limit, timeout=timeout, classifier="cursor")
     _emit({"continue": True})
 
 
 def run_cursor_peek(*, limit: int, timeout: float) -> None:
     """preToolUse: hard nudge — deny the first tool call once and feed the skill to the agent.
 
-    No output (exit 0) allows the action. We only deny when the outcome is ready and the shared
-    emit claim is still open, so exactly one tool call is denied; the agent reads + applies the
-    skill and retries, and the retry is allowed.
+    No output (exit 0) allows the action. We only deny when the outcome is ready, actionable, and
+    the shared emit claim is still open, so exactly one tool call is denied; the agent reads +
+    applies the skill and retries, and the retry is allowed.
     """
-    if os.environ.get(_h._SUBAGENT_ENV):
+    if os.environ.get(skillfire.SUBAGENT_ENV):
         return
-    event = _h._read_event()
+    event = skillfire.read_event()
     if event is None:
         return  # allow
-    session = _session(event)
-    path = _h._cache_path(session)
-    data = _h._cache_read(path)
-    if not data or not data.get("outcome"):
-        return  # not ready / nothing relevant -> allow
-    if not data.get("final"):
-        return  # phase-1 list only — denying now would hand the agent nothing to apply
-    if not _h._claim(_h._emit_marker(path)):
-        return  # already steered (peek/post/duplicate) -> allow
+    reason = skillfire.check_steer(_session(event))
+    if reason is None:
+        return  # not ready / not actionable / already steered -> allow
     _emit(
         {
             "permission": "deny",
-            "agent_message": _deny_message(data["outcome"]),
+            "agent_message": reason,
             "user_message": "AgentNet: applying a relevant skill for this task",
         }
     )
@@ -137,25 +89,12 @@ def run_cursor_post(*, limit: int, timeout: float) -> None:
     Fires only when nothing already steered (the shared emit claim), so a tool-using task that was
     hard-nudged mid-run won't also get a followup.
     """
-    if os.environ.get(_h._SUBAGENT_ENV):
+    if os.environ.get(skillfire.SUBAGENT_ENV):
         return
-    event = _h._read_event()
+    event = skillfire.read_event()
     if event is None:
         return
-    session = _session(event)
-    path = _h._cache_path(session)
-
-    # Short bounded wait for a near-miss. Prefer a final (actionable) outcome, but this is the last
-    # chance for the turn — take the recommendation list if that's all the worker produced.
-    deadline = time.monotonic() + min(timeout, 3.0)
-    data = _h._cache_read(path)
-    while (not data or not data.get("outcome") or not data.get("final")) and (
-        time.monotonic() < deadline
-    ):
-        time.sleep(0.1)
-        data = _h._cache_read(path)
-
-    outcome = (data or {}).get("outcome") or ""
-    if not outcome or not _h._claim(_h._emit_marker(path)):
+    context = skillfire.check_fallback(_session(event), timeout=timeout)
+    if context is None:
         return  # nothing relevant, or a preToolUse/duplicate already steered
-    _emit({"followup_message": _h._fold_context(outcome)})
+    _emit({"followup_message": context})

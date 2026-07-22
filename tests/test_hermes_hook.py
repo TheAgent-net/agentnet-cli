@@ -7,13 +7,13 @@ from typer.testing import CliRunner
 
 from agentnet_cli.cli.main import app
 from agentnet_cli.connectors import hermes_hook as conn
-from agentnet_cli.tools import hermes_hook, hook
+from agentnet_cli.tools import hermes_hook, skillfire
 
 runner = CliRunner()
-_ENV = hook._SUBAGENT_ENV
-_CACHE = "agentnet_cli.tools.hook._cache_path"
-_POPEN = "agentnet_cli.tools.hermes_hook.subprocess.Popen"
-_WHICH = "agentnet_cli.tools.hermes_hook.shutil.which"
+_ENV = skillfire.SUBAGENT_ENV
+_CACHE = "agentnet_cli.tools.skillfire.session.cache_path"
+_POPEN = "agentnet_cli.tools.skillfire.worker.subprocess.Popen"
+_WHICH = "agentnet_cli.tools.skillfire.worker.shutil.which"
 
 
 def _cache(outcome, final=True):
@@ -21,7 +21,7 @@ def _cache(outcome, final=True):
 
 
 def _stdin(monkeypatch, obj):
-    monkeypatch.setattr("agentnet_cli.tools.hook.sys.stdin", io.StringIO(json.dumps(obj)))
+    monkeypatch.setattr("agentnet_cli.tools.skillfire.session.sys.stdin", io.StringIO(json.dumps(obj)))
 
 
 def _payload(**kw):
@@ -94,7 +94,7 @@ def test_hermes_peek_blocks_with_claude_shape(tmp_path, monkeypatch, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["decision"] == "block"
     assert "USE skill Foo" in out["reason"]
-    assert hook._emit_marker(cache).exists()
+    assert skillfire.session.emit_marker(cache).exists()
 
 
 def test_hermes_peek_allows_non_final(tmp_path, monkeypatch, capsys):
@@ -106,7 +106,7 @@ def test_hermes_peek_allows_non_final(tmp_path, monkeypatch, capsys):
     _stdin(monkeypatch, _payload(hook_event_name="pre_tool_call", tool_name="write_file"))
     hermes_hook.run_hermes_peek(limit=6, timeout=3.0)
     assert json.loads(capsys.readouterr().out) == {}
-    assert not hook._emit_marker(cache).exists()
+    assert not skillfire.session.emit_marker(cache).exists()
 
 
 def test_hermes_peek_blocks_once(tmp_path, monkeypatch, capsys):
@@ -149,7 +149,7 @@ def test_hermes_post_is_idempotent_on_attempt(tmp_path, monkeypatch, capsys):
 def test_hermes_post_skips_when_already_steered(tmp_path, monkeypatch, capsys):
     cache = tmp_path / "s.json"
     cache.write_text(_cache("Foo"))
-    hook._emit_marker(cache).touch()
+    skillfire.session.emit_marker(cache).touch()
     monkeypatch.delenv(_ENV, raising=False)
     monkeypatch.setattr(_CACHE, lambda s: cache)
     _stdin(monkeypatch, _payload(hook_event_name="pre_verify", extra={"attempt": 0}))

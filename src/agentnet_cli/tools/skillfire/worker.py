@@ -1,0 +1,116 @@
+"""The detached discovery worker: candidates -> classify -> render -> content/broker -> cache.
+
+:func:`spawn_worker` is the single place that builds and launches the detached
+``skill-hook --fetch`` subprocess — replacing the near-identical Popen-building block that used to
+be duplicated in each harness adapter (only the ``--classifier`` argv value differed).
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+
+from . import broker, candidates, config, render
+from . import classifier as _classifier
+from . import session as _session
+
+
+def run_subagent(query: str, *, limit: int, timeout: float, classifier: str = "claude") -> str:
+    """Every-prompt skill scout (synchronous form used by tests/manual runs).
+
+    1. Fetch installable skill candidates + classify on ``classifier``'s CLI — the reliable
+       relevance **gate**. Empty => not skill-relevant => nothing (zero latency).
+    2. Relevant => a fast pointer, upgraded to the top match's ``SKILL.md`` methodology (or the
+       brokered A2A recommendation if content is unavailable). Best-effort throughout.
+    """
+    if not query:
+        return ""
+    cand_text, skills = candidates.fetch_skill_candidates(
+        query, limit=config.CANDIDATE_LIMIT, timeout=min(timeout, 10.0)
+    )
+    if not cand_text:
+        return ""
+    relevant = _classifier.classify(query, cand_text, timeout=min(timeout, 45.0), backend=classifier)
+    if not relevant:
+        return ""  # gate closed — not skill-relevant
+    list_block = render.render_list(relevant, skills, limit=limit)
+    content_outcome = broker.upgrade_outcome(query, relevant, skills, timeout=timeout)
+    return render.compose_outcome(list_block, content_outcome)
+
+
+def run_fetch(
+    *, session: str, query: str, limit: int, timeout: float, classifier: str = "claude"
+) -> None:
+    """Detached worker (two-phase, so the outcome reaches the hooks fast).
+
+    Phase 1 caches the recommendation list the moment the gate opens (~12s) — that is what lets the
+    steer hook fire mid-answer instead of waiting the full round-trip. Phase 2 then *appends* the
+    top match's actual **``SKILL.md`` methodology** (via ``skills use``) if it lands before anything
+    was injected. ``classifier`` selects the gate's CLI (``claude``/``cursor``/``hermes``).
+    Gate-closed => nothing cached => hooks no-op => zero latency.
+
+    This detached worker is also where the CLI auto-update runs (``maybe_auto_update``): once per
+    turn, off the agent's critical path. The synchronous hooks (``--pre``/``--peek``/``--post``)
+    deliberately skip it (see cli/main.py) so a tool call is never blocked. It is rate-limited and
+    version-gated internally, so it is a cheap no-op unless a new release is actually available.
+    """
+    if not query:
+        return
+    try:
+        from ...cli.core.updater import maybe_auto_update  # noqa: PLC0415
+
+        maybe_auto_update(quiet=True)
+    except Exception:  # noqa: BLE001 — an update check must never disrupt discovery
+        pass
+    budget = max(timeout, config.SUBAGENT_TIMEOUT)
+    path = _session.cache_path(session)
+    cand_text, skills = candidates.fetch_skill_candidates(
+        query, limit=config.CANDIDATE_LIMIT, timeout=min(budget, 10.0)
+    )
+    if not cand_text:
+        return
+    relevant = _classifier.classify(query, cand_text, timeout=min(budget, 45.0), backend=classifier)
+    if not relevant:
+        return  # gate closed — not skill-relevant
+    # Every cached outcome goes through render.compose_outcome so the user-block delimiters the
+    # steer references are always present — even list-only. Phase 1 caches fast but NOT final (it
+    # names skills without any methodology, so a steer on it would hand the agent nothing to apply).
+    list_block = render.render_list(relevant, skills, limit=limit)
+    _session.cache_write(path, render.compose_outcome(list_block, ""), final=False)
+    # Phase 2: attach the top match's actionable SKILL.md content and mark the outcome final.
+    content_outcome = broker.upgrade_outcome(query, relevant, skills, timeout=budget)
+    if _session.emit_marker(path).exists():
+        return  # something already steered — don't rewrite what was shown
+    # If no content is reachable (no npx / all fetches missed), promote the fenced list to final
+    # rather than leaving the steer blocked forever.
+    _session.cache_write(path, render.compose_outcome(list_block, content_outcome), final=True)
+
+
+def spawn_worker(session: str, prompt: str, *, limit: int, timeout: float, classifier: str) -> None:
+    """Claim the per-(session, prompt) spawn marker and launch the detached ``--fetch`` worker.
+
+    Guarded by :func:`skillfire.session.claim` so duplicate pre-event registrations (each harness
+    may register its hook in more than one config file) spawn exactly one worker — not one
+    classifier run per registration. Drops the previous prompt's cached outcome + steer claim first
+    so the new prompt starts fresh.
+    """
+    if not _session.claim(_session.spawn_marker(session, prompt)):
+        return  # a duplicate pre-event already spawned the worker for this prompt
+    _session.clear_stale(session)
+    exe = shutil.which("agentnet") or sys.argv[0]
+    try:
+        subprocess.Popen(  # noqa: S603 — detached discovery, never awaited
+            [
+                exe, "skill-hook", "--fetch",
+                "--session", session, "--query", prompt,
+                "--limit", str(limit), "--timeout", str(timeout),
+                "--classifier", classifier,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:  # noqa: BLE001 — best-effort: never block the prompt/turn
+        pass

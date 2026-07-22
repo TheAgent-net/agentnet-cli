@@ -1,0 +1,82 @@
+"""Brokered A2A fallback: recommend via the live Skills Agent when local content is unreachable."""
+
+from __future__ import annotations
+
+import os
+
+from . import config, content
+
+
+def skills_agent_id() -> str:
+    """Registered agent id the platform resolves (env > config > default). Not a secret."""
+    from ...infra.config import load_config
+
+    return (
+        os.environ.get("AGENTNET_SKILLS_AGENT_ID")
+        or (load_config() or {}).get("skills_agent_id")
+        or config.SKILLS_AGENT_ID_DEFAULT
+    )
+
+
+def negotiate_via_platform(query: str, *, timeout: float) -> str:
+    """Brokered A2A: ``use_agent`` the Skills Agent through the platform with the user's identity.
+
+    The platform relays A2A to the agent and settles synchronously, returning ``agent_response``
+    in one call. No skills-agent token is ever held client-side. Returns the recommendation, or
+    "" on any issue (caller falls back to the local classification).
+    """
+    creds = config.resolve_credentials()
+    if creds is None:
+        return ""
+    token, platform_url = creds
+
+    import httpx
+
+    from ...marketplace.client import PlatformClient
+
+    platform = PlatformClient(
+        base_url=platform_url, api_token=token, http_client=httpx.Client(timeout=timeout)
+    )
+    try:
+        resp = platform.use_agent(agent_id=skills_agent_id(), task=config.SKILLS_ASK.format(task=query))
+    except Exception:  # noqa: BLE001 — best-effort
+        return ""
+    finally:
+        platform.close()
+    # Only trust a settled session — a failed/refunded turn (e.g. the agent hit its time
+    # budget) puts its failure message in agent_response, which must NOT be injected. Fall
+    # back to the local classification instead.
+    if not isinstance(resp, dict) or resp.get("status") != "settled":
+        return ""
+    return (resp.get("agent_response") or "").strip()
+
+
+def upgrade_outcome(
+    query: str,
+    relevant: list[dict[str, str]],
+    skills: dict[str, dict[str, str]],
+    *,
+    timeout: float,
+) -> str:
+    """The actionable outcome once the gate is open: SKILL.md content, else brokered A2A, else "".
+
+    Content-first (the top match's methodology via ``skills use`` — the agent acts on it directly);
+    if that's unavailable (no ``npx`` / all fetches miss), fall back to the platform's brokered A2A
+    recommendation over the same open gate. Either replaces the fast phase-1 pointer.
+    """
+    outcome_content = content.build_content_outcome(
+        relevant, skills, timeout=min(timeout, config.CONTENT_BUDGET)
+    )
+    if outcome_content:
+        return outcome_content
+    broker_text = negotiate_via_platform(query, timeout=min(timeout, config.PLATFORM_A2A_BUDGET))
+    if not broker_text:
+        return ""
+    # The Skills Agent replies in free text and may cite conventional install paths (e.g.
+    # ~/.agentnet/skills/<repo>/<slug>/SKILL.md) for skills that were never installed here. Label
+    # it so the agent treats it as a recommendation and doesn't go hunting for files that
+    # don't exist — the observed failure was "path wasn't on disk, so I ignored the skill".
+    return (
+        "Recommended by the AgentNet Skills Agent (nothing is installed locally — do not look for "
+        "these files on disk):\n" + broker_text
+    )

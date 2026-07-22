@@ -6,13 +6,13 @@ from typer.testing import CliRunner
 
 from agentnet_cli.cli.main import app
 from agentnet_cli.connectors import cursor_hook as conn
-from agentnet_cli.tools import cursor_hook, hook
+from agentnet_cli.tools import cursor_hook, skillfire
 
 runner = CliRunner()
-_ENV = hook._SUBAGENT_ENV
-_CACHE = "agentnet_cli.tools.hook._cache_path"
-_POPEN = "agentnet_cli.tools.cursor_hook.subprocess.Popen"
-_WHICH = "agentnet_cli.tools.cursor_hook.shutil.which"
+_ENV = skillfire.SUBAGENT_ENV
+_CACHE = "agentnet_cli.tools.skillfire.session.cache_path"
+_POPEN = "agentnet_cli.tools.skillfire.worker.subprocess.Popen"
+_WHICH = "agentnet_cli.tools.skillfire.worker.shutil.which"
 
 
 def _cache(outcome, final=True):
@@ -21,7 +21,7 @@ def _cache(outcome, final=True):
 
 
 def _stdin(monkeypatch, obj):
-    monkeypatch.setattr("agentnet_cli.tools.hook.sys.stdin", io.StringIO(json.dumps(obj)))
+    monkeypatch.setattr("agentnet_cli.tools.skillfire.session.sys.stdin", io.StringIO(json.dumps(obj)))
 
 
 # ── run_cursor_pre (beforeSubmitPrompt: spawn worker, allow submission) ───────
@@ -86,7 +86,7 @@ def test_cursor_peek_denies_with_message(tmp_path, monkeypatch, capsys):
     assert out["permission"] == "deny"
     assert "USE skill Foo" in out["agent_message"] and out["agent_message"].startswith("[AgentNet]")
     assert out["user_message"]
-    assert hook._emit_marker(cache).exists()  # steer claim taken
+    assert skillfire.session.emit_marker(cache).exists()  # steer claim taken
 
 
 def test_cursor_peek_allows_non_final_outcome(tmp_path, monkeypatch, capsys):
@@ -99,7 +99,7 @@ def test_cursor_peek_allows_non_final_outcome(tmp_path, monkeypatch, capsys):
     _stdin(monkeypatch, {"conversation_id": "c", "tool_name": "Write"})
     cursor_hook.run_cursor_peek(limit=5, timeout=3.0)
     assert capsys.readouterr().out == ""            # tool allowed
-    assert not hook._emit_marker(cache).exists()    # steer claim preserved
+    assert not skillfire.session.emit_marker(cache).exists()    # steer claim preserved
 
 
 def test_cursor_peek_allows_when_not_ready(tmp_path, monkeypatch, capsys):
@@ -151,7 +151,7 @@ def test_cursor_post_skips_when_already_steered(tmp_path, monkeypatch, capsys):
     # A tool-using task hard-nudged mid-run -> stop must not also fire a followup.
     cache = tmp_path / "s.json"
     cache.write_text(_cache("Foo"))
-    hook._emit_marker(cache).touch()
+    skillfire.session.emit_marker(cache).touch()
     monkeypatch.delenv(_ENV, raising=False)
     monkeypatch.setattr(_CACHE, lambda s: cache)
     _stdin(monkeypatch, {"conversation_id": "c", "status": "completed", "loop_count": 0})

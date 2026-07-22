@@ -332,18 +332,19 @@ def skill_hook(
     steers the agent mid-flight once the outcome is ready; ``--post`` (Stop) is the guaranteed
     fallback. Best-effort: nothing/exit 0 on error.
     """
-    from ..tools.hook import run_fetch, run_peek, run_post, run_pre
+    from ..tools.claude_hook import run_claude_peek, run_claude_post, run_claude_pre
+    from ..tools.skillfire import run_fetch
 
     if fetch:
         run_fetch(
             session=session, query=query, limit=limit, timeout=hook_timeout, classifier=classifier
         )
     elif pre:
-        run_pre(limit=limit, timeout=hook_timeout)
+        run_claude_pre(limit=limit, timeout=hook_timeout)
     elif peek:
-        run_peek(limit=limit, timeout=hook_timeout)
+        run_claude_peek(limit=limit, timeout=hook_timeout)
     else:  # default and --post
-        run_post(limit=limit, timeout=hook_timeout)
+        run_claude_post(limit=limit, timeout=hook_timeout)
 
 
 @app.command(name="cursor-hook", hidden=True)
