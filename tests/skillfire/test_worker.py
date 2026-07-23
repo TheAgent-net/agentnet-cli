@@ -118,13 +118,14 @@ _CAND = ("- Foo: x", {"Foo": {"repo": "r/foo", "install_cmd": "npx skills add r/
                               "url": "http://foo", "desc": "x"}})
 
 
-def _patch_fetch(cache, *, cand=_CAND, relevant=None, upgrade="CONTENT skill"):
+def _patch_fetch(cache, *, cand=_CAND, relevant=None, upgrade="CONTENT skill", actual_backend="claude"):
     if relevant is None:
         relevant = [{"name": "Foo", "why": "helps"}]
     return (
         patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", return_value=cand),
-        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=relevant),
+        patch("agentnet_cli.tools.skillfire.classifier.classify",
+              return_value=(relevant, actual_backend if relevant else None)),
         patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=upgrade),
         patch(_REPORT_RECOMMENDATION),  # never let usage telemetry make a real network call in tests
     )
@@ -250,7 +251,7 @@ def test_fetch_passes_harness_session_and_classifier_model(tmp_path):
         patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", fetch_mock),
         patch("agentnet_cli.tools.skillfire.classifier.classify",
-              return_value=[{"name": "Foo", "why": "helps"}]),
+              return_value=([{"name": "Foo", "why": "helps"}], "claude")),
         patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value="") as upgrade,
         patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
               return_value="claude-haiku-4-5-20251001"),
@@ -275,7 +276,7 @@ def test_fetch_sets_model_only_for_hermes(tmp_path):
         patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", fetch_mock),
         patch("agentnet_cli.tools.skillfire.classifier.classify",
-              return_value=[{"name": "Foo", "why": "helps"}]),
+              return_value=([{"name": "Foo", "why": "helps"}], "hermes")),
         patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
         patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
               return_value="provider/model"),
@@ -293,7 +294,7 @@ def test_run_subagent_passes_harness_and_classifier_model():
     with (
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", fetch_mock),
         patch("agentnet_cli.tools.skillfire.classifier.classify",
-              return_value=[{"name": "Foo", "why": "helps"}]),
+              return_value=([{"name": "Foo", "why": "helps"}], "cursor")),
         patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value="") as upgrade,
         patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
               return_value="gpt-5-mini"),
@@ -314,7 +315,7 @@ def test_fetch_reports_recommendation_when_gate_opens(tmp_path):
     with (
         patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", return_value=_CAND),
-        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=relevant),
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=(relevant, "claude")),
         patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
         patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
               return_value="claude-haiku-4-5-20251001"),
@@ -337,7 +338,7 @@ def test_run_subagent_reports_recommendation_when_gate_opens():
     with (
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates",
               return_value=("- Foo: x", {"Foo": _SKILL_INFO})),
-        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=relevant),
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=(relevant, "hermes")),
         patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
         patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
               return_value="provider/model"),
@@ -355,8 +356,38 @@ def test_fetch_does_not_report_when_gate_closed(tmp_path):
     with (
         patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", return_value=_CAND),
-        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=[]),  # gate closed
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=([], None)),  # gate closed
         patch(_REPORT_RECOMMENDATION) as report,
     ):
         worker.run_fetch(session="s9", query="what is 2+2", limit=5, timeout=3.0)
     report.assert_not_called()
+
+
+def test_fetch_attributes_model_to_the_backend_that_actually_ran(tmp_path):
+    # Regression: `cursor` was requested but cursor-agent wasn't available, so `classify` fell back
+    # to `claude`. `harness` must stay "cursor" (still the IDE the user is in), but `classifier_model`
+    # must reflect claude's model -- not cursor's (possibly-nonexistent) pinned one -- since claude is
+    # what actually performed the classification.
+    cache = tmp_path / "s.json"
+    relevant = [{"name": "Foo", "why": "helps"}]
+
+    def fake_resolve(backend):
+        return {"claude": "claude-haiku-4-5-20251001", "cursor": "gpt-5-mini"}.get(backend)
+
+    with (
+        patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", return_value=_CAND),
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=(relevant, "claude")),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value="") as upgrade,
+        patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
+              side_effect=fake_resolve),
+        patch(_REPORT_RECOMMENDATION) as report,
+    ):
+        worker.run_fetch(session="s9", query="review sql", limit=5, timeout=3.0, classifier="cursor")
+
+    report_kwargs = report.call_args.kwargs
+    assert report_kwargs["harness"] == "cursor"  # still the requested IDE
+    assert report_kwargs["classifier_model"] == "claude-haiku-4-5-20251001"  # claude actually ran
+    upgrade_kwargs = upgrade.call_args.kwargs
+    assert upgrade_kwargs["harness"] == "cursor"
+    assert upgrade_kwargs["classifier_model"] == "claude-haiku-4-5-20251001"

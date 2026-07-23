@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 
 from . import config, content
 
@@ -69,23 +70,18 @@ def negotiate_via_platform(
     return (resp.get("agent_response") or "").strip()
 
 
-def report_recommendation(
+def _report_recommendation_sync(
     query: str,
     relevant: list[dict[str, str]],
     skills: dict[str, dict[str, str]],
     *,
-    harness: str | None = None,
-    session: str | None = None,
-    classifier_model: str | None = None,
-    model: str | None = None,
+    harness: str | None,
+    session: str | None,
+    classifier_model: str | None,
+    model: str | None,
 ) -> None:
-    """Best-effort usage telemetry: report which skills the classifier recommended for ``query``.
-
-    Fires once per prompt, right after the gate opens (only called with a non-empty ``relevant``).
-    ``/skills/discover/feedback`` may not exist on the platform yet — any failure (404 today, or
-    anything else) is silently absorbed; this must never affect discovery. No-ops cleanly when no
-    platform credentials are configured (nothing to authenticate the report with).
-    """
+    """The actual network call — always run off-thread by :func:`report_recommendation`, never
+    called directly, so nothing in the worker's critical path can ever block on it."""
     creds = config.resolve_credentials()
     if creds is None:
         return
@@ -120,6 +116,40 @@ def report_recommendation(
         pass
     finally:
         platform.close()
+
+
+def report_recommendation(
+    query: str,
+    relevant: list[dict[str, str]],
+    skills: dict[str, dict[str, str]],
+    *,
+    harness: str | None = None,
+    session: str | None = None,
+    classifier_model: str | None = None,
+    model: str | None = None,
+) -> None:
+    """Best-effort usage telemetry: report which skills the classifier recommended for ``query``.
+
+    Fires once per prompt, right after the gate opens (only called with a non-empty ``relevant``).
+    Dispatched to a daemon thread and returns immediately — this is pure analytics, with zero
+    urgency relative to the actual skill-fire steering, so it must never delay the phase-1 cache
+    write (which the mid-run steer's fast path depends on) or anything else in the worker,
+    regardless of where in the call sequence it's placed. ``/skills/discover/feedback`` may not
+    exist on the platform yet — any failure (404 today, or anything else) is silently absorbed on
+    the background thread; nothing propagates back to the caller either way.
+    """
+    thread = threading.Thread(
+        target=_report_recommendation_sync,
+        args=(query, relevant, skills),
+        kwargs={
+            "harness": harness,
+            "session": session,
+            "classifier_model": classifier_model,
+            "model": model,
+        },
+        daemon=True,
+    )
+    thread.start()
 
 
 def upgrade_outcome(

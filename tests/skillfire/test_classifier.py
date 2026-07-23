@@ -56,9 +56,9 @@ def test_classify_uses_requested_backend(monkeypatch):
 
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", _which_all)
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.subprocess.run", fake_run)
-    assert classifier.classify("q", "- A: x", timeout=10, backend="cursor") == [
-        {"name": "A", "why": "w"}
-    ]
+    relevant, actual_backend = classifier.classify("q", "- A: x", timeout=10, backend="cursor")
+    assert relevant == [{"name": "A", "why": "w"}]
+    assert actual_backend == "cursor"
     assert any("cursor-agent" in c for c in calls)  # ran cursor-agent
     assert not any(c.endswith("claude") for c in calls)  # not claude — cursor succeeded
 
@@ -75,13 +75,17 @@ def test_classify_falls_back_to_other_backend(monkeypatch):
 
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", fake_which)
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.subprocess.run", fake_run)
-    classifier.classify("q", "- A: x", timeout=10, backend="cursor")  # requested cursor is absent
+    _relevant, actual_backend = classifier.classify("q", "- A: x", timeout=10, backend="cursor")
     assert any(c.endswith("claude") for c in calls)  # fell back to claude
+    # The returned attribution must reflect what actually ran, not what was requested — this is
+    # what lets callers (worker.py) report the correct classifier_model instead of misattributing
+    # to the requested-but-unavailable backend.
+    assert actual_backend == "claude"
 
 
 def test_classify_no_backend(monkeypatch):
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", lambda n: None)
-    assert classifier.classify("q", "- A: x", timeout=10, backend="cursor") == []
+    assert classifier.classify("q", "- A: x", timeout=10, backend="cursor") == ([], None)
 
 
 def test_hermes_classifier_shares_memory(monkeypatch):

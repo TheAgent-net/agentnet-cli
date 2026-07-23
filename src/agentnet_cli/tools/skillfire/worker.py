@@ -26,29 +26,35 @@ def run_subagent(query: str, *, limit: int, timeout: float, classifier: str = "c
     """
     if not query:
         return ""
-    classifier_model = _classifier.resolve_classifier_model(classifier)
-    # Only Hermes classifies on the agent's own driving model; Claude/Cursor have no way to report
-    # one (see classifier.resolve_classifier_model / claude_hook.py's module docstring).
-    agent_model = classifier_model if classifier == "hermes" else None
+    # Resolved for the REQUESTED backend — this is the best information available before classify()
+    # has run, so it's what the discovery call (which fires first) gets attributed to.
+    requested_model = _classifier.resolve_classifier_model(classifier)
     cand_text, skills = candidates.fetch_skill_candidates(
         query,
         limit=config.CANDIDATE_LIMIT,
         timeout=min(timeout, 10.0),
         harness=classifier,
-        classifier_model=classifier_model,
-        model=agent_model,
+        classifier_model=requested_model,
+        model=requested_model if classifier == "hermes" else None,
     )
     if not cand_text:
         return ""
-    relevant = _classifier.classify(query, cand_text, timeout=min(timeout, 45.0), backend=classifier)
+    relevant, actual_backend = _classifier.classify(
+        query, cand_text, timeout=min(timeout, 45.0), backend=classifier
+    )
     if not relevant:
         return ""  # gate closed — not skill-relevant
+    # `classify` may have fallen back to a different backend than requested — `harness` stays the
+    # requested one (that's still which IDE the user is in, unaffected by the fallback), but the
+    # *model* attribution follows whichever backend actually ran, not the one we asked for.
+    actual_model = _classifier.resolve_classifier_model(actual_backend) if actual_backend else None
+    agent_model = actual_model if actual_backend == "hermes" else None
     broker.report_recommendation(
         query,
         relevant,
         skills,
         harness=classifier,
-        classifier_model=classifier_model,
+        classifier_model=actual_model,
         model=agent_model,
     )
     list_block = render.render_list(relevant, skills, limit=limit)
@@ -58,7 +64,7 @@ def run_subagent(query: str, *, limit: int, timeout: float, classifier: str = "c
         skills,
         timeout=timeout,
         harness=classifier,
-        classifier_model=classifier_model,
+        classifier_model=actual_model,
         model=agent_model,
     )
     return render.compose_outcome(list_block, content_outcome)
@@ -90,31 +96,37 @@ def run_fetch(
         pass
     budget = max(timeout, config.SUBAGENT_TIMEOUT)
     path = _session.cache_path(session)
-    classifier_model = _classifier.resolve_classifier_model(classifier)
-    # Only Hermes classifies on the agent's own driving model; Claude/Cursor have no way to report
-    # one (see classifier.resolve_classifier_model / claude_hook.py's module docstring).
-    agent_model = classifier_model if classifier == "hermes" else None
+    # Resolved for the REQUESTED backend — this is the best information available before classify()
+    # has run, so it's what the discovery call (which fires first) gets attributed to.
+    requested_model = _classifier.resolve_classifier_model(classifier)
     cand_text, skills = candidates.fetch_skill_candidates(
         query,
         limit=config.CANDIDATE_LIMIT,
         timeout=min(budget, 10.0),
         harness=classifier,
         session=session,
-        classifier_model=classifier_model,
-        model=agent_model,
+        classifier_model=requested_model,
+        model=requested_model if classifier == "hermes" else None,
     )
     if not cand_text:
         return
-    relevant = _classifier.classify(query, cand_text, timeout=min(budget, 45.0), backend=classifier)
+    relevant, actual_backend = _classifier.classify(
+        query, cand_text, timeout=min(budget, 45.0), backend=classifier
+    )
     if not relevant:
         return  # gate closed — not skill-relevant
+    # `classify` may have fallen back to a different backend than requested — `harness` stays the
+    # requested one (that's still which IDE the user is in, unaffected by the fallback), but the
+    # *model* attribution follows whichever backend actually ran, not the one we asked for.
+    actual_model = _classifier.resolve_classifier_model(actual_backend) if actual_backend else None
+    agent_model = actual_model if actual_backend == "hermes" else None
     broker.report_recommendation(
         query,
         relevant,
         skills,
         harness=classifier,
         session=session,
-        classifier_model=classifier_model,
+        classifier_model=actual_model,
         model=agent_model,
     )
     # Every cached outcome goes through render.compose_outcome so the user-block delimiters the
@@ -130,7 +142,7 @@ def run_fetch(
         timeout=budget,
         harness=classifier,
         session=session,
-        classifier_model=classifier_model,
+        classifier_model=actual_model,
         model=agent_model,
     )
     if _session.emit_marker(path).exists():
