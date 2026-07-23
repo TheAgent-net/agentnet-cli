@@ -56,9 +56,9 @@ def test_classify_uses_requested_backend(monkeypatch):
 
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", _which_all)
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.subprocess.run", fake_run)
-    assert classifier.classify("q", "- A: x", timeout=10, backend="cursor") == [
-        {"name": "A", "why": "w"}
-    ]
+    relevant, actual_backend = classifier.classify("q", "- A: x", timeout=10, backend="cursor")
+    assert relevant == [{"name": "A", "why": "w"}]
+    assert actual_backend == "cursor"
     assert any("cursor-agent" in c for c in calls)  # ran cursor-agent
     assert not any(c.endswith("claude") for c in calls)  # not claude — cursor succeeded
 
@@ -75,13 +75,17 @@ def test_classify_falls_back_to_other_backend(monkeypatch):
 
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", fake_which)
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.subprocess.run", fake_run)
-    classifier.classify("q", "- A: x", timeout=10, backend="cursor")  # requested cursor is absent
+    _relevant, actual_backend = classifier.classify("q", "- A: x", timeout=10, backend="cursor")
     assert any(c.endswith("claude") for c in calls)  # fell back to claude
+    # The returned attribution must reflect what actually ran, not what was requested — this is
+    # what lets callers (worker.py) report the correct classifier_model instead of misattributing
+    # to the requested-but-unavailable backend.
+    assert actual_backend == "claude"
 
 
 def test_classify_no_backend(monkeypatch):
     monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", lambda n: None)
-    assert classifier.classify("q", "- A: x", timeout=10, backend="cursor") == []
+    assert classifier.classify("q", "- A: x", timeout=10, backend="cursor") == ([], None)
 
 
 def test_hermes_classifier_shares_memory(monkeypatch):
@@ -118,3 +122,40 @@ def test_hermes_classifier_shares_memory(monkeypatch):
     assert "memory" in captured["disabled_toolsets"]  # tool still disabled (one-shot gate)
     assert captured["max_iterations"] == 1
     assert config.CLASSIFIER_PROMPT in captured["prompt"]
+
+
+# ── resolve_classifier_model (pure lookup, no invocation) ─────────────────────
+def test_resolve_classifier_model_claude_is_fixed():
+    assert classifier.resolve_classifier_model("claude") == config.SUBAGENT_MODEL
+
+
+def test_resolve_classifier_model_cursor_reads_env(monkeypatch):
+    monkeypatch.delenv(config.CURSOR_MODEL_ENV, raising=False)
+    assert classifier.resolve_classifier_model("cursor") is None  # not pinned -> unknown, not guessed
+    monkeypatch.setenv(config.CURSOR_MODEL_ENV, "gpt-5-mini")
+    assert classifier.resolve_classifier_model("cursor") == "gpt-5-mini"
+
+
+def test_resolve_classifier_model_hermes_uses_gateway(monkeypatch):
+    import sys
+    import types
+
+    fake_gateway_run = types.ModuleType("gateway.run")
+    fake_gateway_run._resolve_gateway_model = lambda: "provider/model"
+    fake_gateway = types.ModuleType("gateway")
+    fake_gateway.run = fake_gateway_run
+    monkeypatch.setitem(sys.modules, "gateway", fake_gateway)
+    monkeypatch.setitem(sys.modules, "gateway.run", fake_gateway_run)
+    assert classifier.resolve_classifier_model("hermes") == "provider/model"
+
+
+def test_resolve_classifier_model_hermes_none_outside_hermes(monkeypatch):
+    import sys
+
+    monkeypatch.delitem(sys.modules, "gateway.run", raising=False)
+    monkeypatch.delitem(sys.modules, "gateway", raising=False)
+    assert classifier.resolve_classifier_model("hermes") is None
+
+
+def test_resolve_classifier_model_unknown_backend():
+    assert classifier.resolve_classifier_model("something-else") is None

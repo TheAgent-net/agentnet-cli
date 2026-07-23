@@ -155,12 +155,25 @@ class SkillDiscovery:
 
     # ── Platform API mode ─────────────────────────────────────────
 
-    def _discover_via_platform(self, use_case: str, limit: int) -> dict[str, Any]:
+    def _discover_via_platform(
+        self,
+        use_case: str,
+        limit: int,
+        *,
+        harness: str | None = None,
+        session: str | None = None,
+    ) -> dict[str, Any]:
         from agentnet_cli import __version__  # noqa: PLC0415
+
+        params: dict[str, Any] = {"use_case": use_case, "limit": limit}
+        if harness:
+            params["harness"] = harness
+        if session:
+            params["session_id"] = session
 
         resp = self._http.get(
             f"{self._platform_url}/skills/discover",
-            params={"use_case": use_case, "limit": limit},
+            params=params,
             headers={
                 "Authorization": f"Bearer {self._api_token}",
                 "User-Agent": f"agentnet-cli/{__version__}",
@@ -469,10 +482,32 @@ class SkillDiscovery:
 
     # ── Main entry point ─────────────────────────────────────────
 
-    def discover(self, *, use_case: str, limit: int = 10) -> dict[str, Any]:
+    def discover(
+        self,
+        *,
+        use_case: str,
+        limit: int = 10,
+        harness: str | None = None,
+        session: str | None = None,
+    ) -> dict[str, Any]:
+        """``harness``/``session`` are optional call context for the platform request (which
+        harness/session triggered this retrieval) — best-effort, omitted when unknown, never
+        required for discovery to work.
+
+        Note there is deliberately **no** ``classifier_model``/``model`` here: discovery *retrieves*
+        the candidates that the relevance gate later classifies, so it runs before any classifier
+        and cannot know which model will gate (the backend can even fall back). Attributing a gate
+        model to a retrieval call would be a guess that conflicts with the authoritative model on
+        the post-classification records (feedback + brokered A2A). The gate model is reported only
+        there, where it is actually known."""
         if self._can_use_platform:
             try:
-                return self._discover_via_platform(use_case, limit)
+                return self._discover_via_platform(
+                    use_case,
+                    limit,
+                    harness=harness,
+                    session=session,
+                )
             except Exception:
                 pass
 

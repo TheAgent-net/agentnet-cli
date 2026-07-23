@@ -26,17 +26,51 @@ def run_subagent(query: str, *, limit: int, timeout: float, classifier: str = "c
     """
     if not query:
         return ""
+    # Discovery is candidate *retrieval* — it runs before the gate, so it carries only harness +
+    # session, never a gate model (which backend/model classifies isn't known yet and can fall
+    # back). The gate model is attributed below, on the post-classification records.
     cand_text, skills = candidates.fetch_skill_candidates(
-        query, limit=config.CANDIDATE_LIMIT, timeout=min(timeout, 10.0)
+        query,
+        limit=config.CANDIDATE_LIMIT,
+        timeout=min(timeout, 10.0),
+        harness=classifier,
     )
     if not cand_text:
         return ""
-    relevant = _classifier.classify(query, cand_text, timeout=min(timeout, 45.0), backend=classifier)
+    relevant, actual_backend = _classifier.classify(
+        query, cand_text, timeout=min(timeout, 45.0), backend=classifier
+    )
     if not relevant:
         return ""  # gate closed — not skill-relevant
+    # `classify` may have fallen back to a different backend than requested — `harness` stays the
+    # requested one (that's still which IDE the user is in, unaffected by the fallback), but the
+    # *model* attribution follows whichever backend actually ran, not the one we asked for.
+    actual_model = _classifier.resolve_classifier_model(actual_backend) if actual_backend else None
+    agent_model = actual_model if actual_backend == "hermes" else None
+    report_thread = broker.report_recommendation(
+        query,
+        relevant,
+        skills,
+        harness=classifier,
+        classifier_model=actual_model,
+        model=agent_model,
+    )
     list_block = render.render_list(relevant, skills, limit=limit)
-    content_outcome = broker.upgrade_outcome(query, relevant, skills, timeout=timeout)
-    return render.compose_outcome(list_block, content_outcome)
+    content_outcome = broker.upgrade_outcome(
+        query,
+        relevant,
+        skills,
+        timeout=timeout,
+        harness=classifier,
+        classifier_model=actual_model,
+        model=agent_model,
+    )
+    outcome = render.compose_outcome(list_block, content_outcome)
+    # This is the process's last chance to let the report actually reach the network before it
+    # exits (a daemon thread is killed outright on process exit) — bounded so it can never hang;
+    # everything that actually matters (the outcome above) is already computed by this point.
+    report_thread.join(timeout=config.REPORT_JOIN_TIMEOUT)
+    return outcome
 
 
 def run_fetch(
@@ -65,26 +99,64 @@ def run_fetch(
         pass
     budget = max(timeout, config.SUBAGENT_TIMEOUT)
     path = _session.cache_path(session)
+    # Discovery is candidate *retrieval* — it runs before the gate, so it carries only harness +
+    # session, never a gate model (which backend/model classifies isn't known yet and can fall
+    # back). The gate model is attributed below, on the post-classification records.
     cand_text, skills = candidates.fetch_skill_candidates(
-        query, limit=config.CANDIDATE_LIMIT, timeout=min(budget, 10.0)
+        query,
+        limit=config.CANDIDATE_LIMIT,
+        timeout=min(budget, 10.0),
+        harness=classifier,
+        session=session,
     )
     if not cand_text:
         return
-    relevant = _classifier.classify(query, cand_text, timeout=min(budget, 45.0), backend=classifier)
+    relevant, actual_backend = _classifier.classify(
+        query, cand_text, timeout=min(budget, 45.0), backend=classifier
+    )
     if not relevant:
         return  # gate closed — not skill-relevant
+    # `classify` may have fallen back to a different backend than requested — `harness` stays the
+    # requested one (that's still which IDE the user is in, unaffected by the fallback), but the
+    # *model* attribution follows whichever backend actually ran, not the one we asked for.
+    actual_model = _classifier.resolve_classifier_model(actual_backend) if actual_backend else None
+    agent_model = actual_model if actual_backend == "hermes" else None
+    report_thread = broker.report_recommendation(
+        query,
+        relevant,
+        skills,
+        harness=classifier,
+        session=session,
+        classifier_model=actual_model,
+        model=agent_model,
+    )
     # Every cached outcome goes through render.compose_outcome so the user-block delimiters the
     # steer references are always present — even list-only. Phase 1 caches fast but NOT final (it
     # names skills without any methodology, so a steer on it would hand the agent nothing to apply).
     list_block = render.render_list(relevant, skills, limit=limit)
     _session.cache_write(path, render.compose_outcome(list_block, ""), final=False)
     # Phase 2: attach the top match's actionable SKILL.md content and mark the outcome final.
-    content_outcome = broker.upgrade_outcome(query, relevant, skills, timeout=budget)
+    content_outcome = broker.upgrade_outcome(
+        query,
+        relevant,
+        skills,
+        timeout=budget,
+        harness=classifier,
+        session=session,
+        classifier_model=actual_model,
+        model=agent_model,
+    )
     if _session.emit_marker(path).exists():
+        # This is still the process's last chance to let the report reach the network before it
+        # exits (a daemon thread is killed outright on exit) — bounded so it can never hang.
+        report_thread.join(timeout=config.REPORT_JOIN_TIMEOUT)
         return  # something already steered — don't rewrite what was shown
     # If no content is reachable (no npx / all fetches missed), promote the fenced list to final
     # rather than leaving the steer blocked forever.
     _session.cache_write(path, render.compose_outcome(list_block, content_outcome), final=True)
+    # Last chance to let the report reach the network before the process exits — bounded so it can
+    # never hang; everything that actually matters (the cache write above) is already done.
+    report_thread.join(timeout=config.REPORT_JOIN_TIMEOUT)
 
 
 def spawn_worker(session: str, prompt: str, *, limit: int, timeout: float, classifier: str) -> None:

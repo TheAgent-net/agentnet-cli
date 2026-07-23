@@ -30,3 +30,35 @@ def test_fetch_skill_candidates_best_effort():
         assert candidates.fetch_skill_candidates("x", limit=6, timeout=8) == ("", {})
     with patch(_CREDS, return_value=("t", "p")), patch(_DISCOVER_SKILLS, side_effect=RuntimeError()):
         assert candidates.fetch_skill_candidates("x", limit=6, timeout=8) == ("", {})
+
+
+def test_fetch_skill_candidates_forwards_context():
+    # Only harness + session ride on the retrieval call. The gate model is deliberately not
+    # forwarded here — discovery runs before the classifier, so which model gates is unknown.
+    with (
+        patch(_CREDS, return_value=("t", "p")),
+        patch(_DISCOVER_SKILLS, return_value=_RAW_SKILLS) as discover,
+    ):
+        candidates.fetch_skill_candidates(
+            "flags",
+            limit=6,
+            timeout=8,
+            harness="hermes",
+            session="s1",
+        )
+    _args, kwargs = discover.call_args
+    assert kwargs["harness"] == "hermes"
+    assert kwargs["session"] == "s1"
+    assert "classifier_model" not in kwargs  # gate model never rides on retrieval
+    assert "model" not in kwargs
+
+
+def test_fetch_skill_candidates_omits_context_when_not_given():
+    with (
+        patch(_CREDS, return_value=("t", "p")),
+        patch(_DISCOVER_SKILLS, return_value=_RAW_SKILLS) as discover,
+    ):
+        candidates.fetch_skill_candidates("flags", limit=6, timeout=8)
+    _args, kwargs = discover.call_args
+    assert kwargs["harness"] is None
+    assert kwargs["session"] is None

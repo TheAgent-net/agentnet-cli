@@ -83,7 +83,95 @@ def test_peek_forces_block_and_claims_once(tmp_path, monkeypatch, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["decision"] == "block"
     assert "USE skill Foo" in out["reason"]
+    assert "systemMessage" in out  # guaranteed-display channel always present alongside reason
     assert skillfire.session.emit_marker(cache).exists()  # atomic steer claim taken
+
+
+def test_peek_system_message_carries_the_bare_list(tmp_path, monkeypatch, capsys):
+    # systemMessage is Claude Code's platform-guaranteed display channel (never sent to the model),
+    # so it should carry exactly the clean list — no [AgentNet] framing, no instructions.
+    from agentnet_cli.tools.skillfire import render
+
+    outcome = render.compose_outcome("AgentNet found these skills:\n\nA — x", "")
+    cache = tmp_path / "s.json"
+    cache.write_text(_cache(outcome))
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setattr(_CACHE, lambda s: cache)
+    _stdin(monkeypatch, {"session_id": "s"})
+    claude_hook.run_claude_peek(limit=5, timeout=3.0)
+    out = json.loads(capsys.readouterr().out)
+    assert out["systemMessage"] == "AgentNet found these skills:\n\nA — x"
+    assert "[AgentNet]" not in out["systemMessage"]  # no instruction framing, just the list
+
+
+def test_peek_wording_never_claims_hidden_from_user(tmp_path, monkeypatch, capsys):
+    # Claude Code prints the whole `reason` to the user's terminal transcript (native CLI
+    # behavior), so a claim that a section is hidden from the user is a checkable lie that reads
+    # as an injection signature. Claude's own wording (skillfire.render used read-only, not the
+    # shared steer.py wrapper) must never assert that — and drops the "AGENT ONLY" framing
+    # entirely rather than just softening it, naming the temp path directly instead.
+    from agentnet_cli.tools.skillfire import render
+
+    content = (
+        "foo-skill — does foo\n\nThe full skill methodology is on disk at:\n"
+        "  /tmp/fake-skill-dir/SKILL.md\nRead it and follow it as you continue."
+    )
+    outcome_with_content = render.compose_outcome("AgentNet found these skills:\n\nA — x", content)
+    cache = tmp_path / "s.json"
+    cache.write_text(_cache(outcome_with_content))
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setattr(_CACHE, lambda s: cache)
+    _stdin(monkeypatch, {"session_id": "s"})
+    claude_hook.run_claude_peek(limit=5, timeout=3.0)
+    out = json.loads(capsys.readouterr().out)
+    reason = out["reason"]
+    assert "does not see it" not in reason
+    assert "do not show the user" not in reason
+    assert "AGENT ONLY" not in reason  # dropped entirely, not just relabeled
+    assert "A — x" in reason  # the list is still shared with the user
+    assert "fetched to a temp file at" in reason
+    assert "/tmp/fake-skill-dir/SKILL.md" in reason  # path named directly, not duplicated wording
+
+
+def test_peek_wording_list_only_no_content(tmp_path, monkeypatch, capsys):
+    # A list-only outcome (promoted to final with no methodology reachable) gets the "continue,
+    # applying what those skills suggest" tail — no path, no AGENT ONLY mention at all.
+    from agentnet_cli.tools.skillfire import render
+
+    outcome_list_only = render.compose_outcome("AgentNet found these skills:\n\nA — x", "")
+    cache = tmp_path / "s.json"
+    cache.write_text(_cache(outcome_list_only))
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setattr(_CACHE, lambda s: cache)
+    _stdin(monkeypatch, {"session_id": "s"})
+    claude_hook.run_claude_peek(limit=5, timeout=3.0)
+    reason = json.loads(capsys.readouterr().out)["reason"]
+    assert "A — x" in reason
+    assert "applying what those skills suggest" in reason
+    assert "fetched to a temp file" not in reason
+    assert "AGENT ONLY" not in reason
+
+
+def test_peek_wording_brokered_fallback_has_no_path(tmp_path, monkeypatch, capsys):
+    # The brokered-A2A recommendation has no on-disk SKILL.md — _apply_tail must fall back to
+    # embedding the recommendation directly rather than claim a path that doesn't exist.
+    from agentnet_cli.tools.skillfire import render
+
+    broker_content = (
+        "Recommended by the AgentNet Skills Agent (nothing is installed locally — do not look "
+        "for these files on disk):\nUse the multi-stage-dockerfile pattern."
+    )
+    outcome = render.compose_outcome("AgentNet found these skills:\n\nA — x", broker_content)
+    cache = tmp_path / "s.json"
+    cache.write_text(_cache(outcome))
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setattr(_CACHE, lambda s: cache)
+    _stdin(monkeypatch, {"session_id": "s"})
+    claude_hook.run_claude_peek(limit=5, timeout=3.0)
+    reason = json.loads(capsys.readouterr().out)["reason"]
+    assert "apply this recommendation" in reason
+    assert "Use the multi-stage-dockerfile pattern" in reason
+    assert "fetched to a temp file" not in reason  # no real path to name
 
 
 def test_peek_noop_when_already_steered(tmp_path, monkeypatch, capsys):
@@ -166,7 +254,48 @@ def test_post_folds_in_and_claims_once(tmp_path, monkeypatch, capsys):
     assert out["decision"] == "block"
     assert out["hookSpecificOutput"]["hookEventName"] == "Stop"
     assert "USE skill Foo" in out["hookSpecificOutput"]["additionalContext"]
+    assert "systemMessage" in out  # top-level, alongside hookSpecificOutput, not nested inside it
     assert skillfire.session.emit_marker(cache).exists()  # claim taken => a re-fired Stop no-ops
+
+
+def test_post_system_message_carries_the_bare_list(tmp_path, monkeypatch, capsys):
+    from agentnet_cli.tools.skillfire import render
+
+    outcome = render.compose_outcome("AgentNet found these skills:\n\nA — x", "")
+    cache = tmp_path / "s.json"
+    cache.write_text(_cache(outcome))
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setattr(_CACHE, lambda s: cache)
+    _stdin(monkeypatch, {"session_id": "s"})
+    claude_hook.run_claude_post(limit=5, timeout=0.3)
+    out = json.loads(capsys.readouterr().out)
+    assert out["systemMessage"] == "AgentNet found these skills:\n\nA — x"
+
+
+def test_post_wording_never_claims_hidden_from_user(tmp_path, monkeypatch, capsys):
+    from agentnet_cli.tools.skillfire import render
+
+    content = (
+        "foo-skill — does foo\n\nThe full skill methodology is on disk at:\n"
+        "  /tmp/fake-skill-dir/SKILL.md\nRead it and follow it as you continue."
+    )
+    outcome_with_content = render.compose_outcome("AgentNet found these skills:\n\nA — x", content)
+    cache = tmp_path / "s.json"
+    cache.write_text(_cache(outcome_with_content))
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setattr(_CACHE, lambda s: cache)
+    _stdin(monkeypatch, {"session_id": "s"})
+    claude_hook.run_claude_post(limit=5, timeout=0.3)
+    out = json.loads(capsys.readouterr().out)
+    context = out["hookSpecificOutput"]["additionalContext"]
+    assert "does not see it" not in context
+    assert "do not show the user" not in context
+    assert "AGENT ONLY" not in context
+    assert "A — x" in context
+    assert "fetched to a temp file at" in context
+    assert "/tmp/fake-skill-dir/SKILL.md" in context
+    assert context.startswith("[AgentNet] Found relevant skills")
+    assert "Before finishing" in context  # post's fallback framing, distinct from peek's
 
 
 def test_post_skips_when_peek_already_steered(tmp_path, monkeypatch, capsys):

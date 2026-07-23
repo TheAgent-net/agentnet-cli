@@ -45,6 +45,12 @@ SKILLS_ASK = (
     "Be direct; do not ask clarifying questions.\n\nTask: {task}"
 )
 
+# report_recommendation's HTTP call runs on a daemon thread (never blocks discovery) but must still
+# get a fair chance to reach the network before the process exits (a daemon thread is killed outright
+# on exit) — callers join() it, bounded, right before their own final return. Kept slightly above the
+# 5.0s httpx timeout the call itself uses so the join naturally resolves once that timeout fires.
+REPORT_JOIN_TIMEOUT = 5.5
+
 # The subagent is a pure relevance CLASSIFIER, not an assistant: given the prompt and real
 # marketplace candidates, it returns strict JSON naming the genuinely-relevant ones (or []).
 CLASSIFIER_PROMPT = (

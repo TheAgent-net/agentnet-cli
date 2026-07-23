@@ -159,9 +159,30 @@ class PlatformClient:
     def list_agents(self) -> dict[str, Any]:
         return self._get("/agents/")
 
-    def use_agent(self, *, agent_id: str, task: str, quote_id: str | None = None, max_amount: float = 0) -> dict[str, Any]:
+    def use_agent(
+        self,
+        *,
+        agent_id: str,
+        task: str,
+        quote_id: str | None = None,
+        max_amount: float = 0,
+        harness: str | None = None,
+        session: str | None = None,
+        classifier_model: str | None = None,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        """``harness``/``session``/``classifier_model``/``model`` are optional call context, added
+        to the body only when known — best-effort, never required."""
         _validate_path_segment(agent_id)
         body: dict[str, Any] = {"message": task, "amount": max_amount}
+        if harness:
+            body["harness"] = harness
+        if session:
+            body["session_id"] = session
+        if classifier_model:
+            body["classifier_model"] = classifier_model
+        if model:
+            body["model"] = model
         return self._post(f"/agents/{agent_id}/use", body)
 
     def continue_session(self, *, session_id: str, message: str) -> dict[str, Any]:
@@ -205,5 +226,33 @@ class PlatformClient:
                 self._post("/auth/telemetry", body)
             else:
                 self._public_post("/auth/telemetry", body)
+        except Exception:
+            pass
+
+    def report_skill_recommendation(
+        self,
+        *,
+        use_case: str,
+        recommended: list[dict[str, Any]],
+        harness: str | None = None,
+        session: str | None = None,
+        classifier_model: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """Best-effort usage telemetry: which skills the client-side classifier recommended for
+        ``use_case``. The endpoint may not exist on the platform yet — any failure (404 today, or
+        anything else once it does exist) is silently absorbed, exactly like ``send_telemetry``.
+        """
+        body: dict[str, Any] = {"use_case": use_case, "recommended": recommended}
+        if harness:
+            body["harness"] = harness
+        if session:
+            body["session_id"] = session
+        if classifier_model:
+            body["classifier_model"] = classifier_model
+        if model:
+            body["model"] = model
+        try:
+            self._post("/skills/discover/feedback", body)
         except Exception:
             pass

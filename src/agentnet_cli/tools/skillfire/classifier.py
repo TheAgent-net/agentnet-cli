@@ -153,14 +153,43 @@ def _parse_classifier_json(stdout: str) -> list[dict[str, str]]:
     return out
 
 
+def resolve_classifier_model(backend: str) -> str | None:
+    """Best-effort, no-invocation lookup of which model *would* run the gate for ``backend``.
+
+    A pure lookup — never runs the classifier, never shells out — so it's cheap to call just to
+    attach context to an outgoing request. Returns ``None`` when the model can't be determined
+    (e.g. the user hasn't pinned a Cursor model, or this isn't running inside Hermes' venv) rather
+    than guessing.
+    """
+    if backend == "claude":
+        return config.SUBAGENT_MODEL
+    if backend == "cursor":
+        return os.environ.get(config.CURSOR_MODEL_ENV, "").strip() or None
+    if backend == "hermes":
+        try:
+            from gateway.run import _resolve_gateway_model  # noqa: PLC0415
+        except Exception:  # noqa: BLE001 — not running inside Hermes
+            return None
+        try:
+            return _resolve_gateway_model()
+        except Exception:  # noqa: BLE001 — best-effort
+            return None
+    return None
+
+
 def classify(
     query: str, cand_text: str, *, timeout: float, backend: str = "claude"
-) -> list[dict[str, str]]:
-    """Relevance classifier over the real candidates — the gate. Returns the relevant subset or [].
+) -> tuple[list[dict[str, str]], str | None]:
+    """Relevance classifier over the real candidates — the gate. Returns ``(relevant, actual_backend)``.
 
     Runs on ``backend``'s CLI (``claude -p`` or ``cursor-agent -p``); if that CLI is unavailable or
-    errors, falls back to the other so a machine with only one still gates. Empty => not
-    skill-relevant => the worker surfaces nothing.
+    errors, falls back to the other so a machine with only one still gates. ``actual_backend`` is
+    whichever backend in ``CLASSIFIER_BACKENDS`` actually produced a result — **not necessarily**
+    the requested ``backend`` — so a caller attributing the result (e.g. reporting
+    ``classifier_model``) resolves the model for the backend that really ran, not the one it asked
+    for. ``None`` only when no backend ran at all, in which case ``relevant`` is also ``[]``. Empty
+    ``relevant`` (with a real ``actual_backend``) => not skill-relevant => the worker surfaces
+    nothing.
     """
     msg = f"REQUEST_TEXT:\n{query}\n\nCANDIDATES:\n{cand_text}"
     order = [backend] + [b for b in config.CLASSIFIER_BACKENDS if b != backend]
@@ -170,5 +199,5 @@ def classify(
             continue
         stdout = runner(msg, timeout=timeout)
         if stdout is not None:  # this CLI ran — trust its result (even an empty/gate-closed one)
-            return _parse_classifier_json(stdout)
-    return []
+            return _parse_classifier_json(stdout), name
+    return [], None
