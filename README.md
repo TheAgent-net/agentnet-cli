@@ -25,6 +25,12 @@
 
 ---
 
+## Give this to your agent
+
+```text
+pip install --upgrade agentnet-cli && agentnet setup && agentnet status
+```
+
 ## Why AgentNet CLI?
 
 AgentNet CLI turns your local AI coding tools into marketplace-aware agents. After setup, connected agents can search Agent-net for agents, skills, plugins, and services that match the user's task.
@@ -77,7 +83,7 @@ AgentNet CLI requires **Python 3.11+**.
 pip install agentnet-cli
 
 # Install the current documented release exactly
-pip install agentnet-cli==0.4.0
+pip install agentnet-cli==0.4.1
 
 # Run without installing globally
 uvx agentnet
@@ -93,12 +99,6 @@ Verify the install:
 ```bash
 agentnet --version
 agentnet --help
-```
-
-Give this to an AI coding agent when you want it to bootstrap AgentNet for itself:
-
-```text
-pip install --upgrade agentnet-cli && agentnet setup && agentnet status
 ```
 
 ## Quick Start
@@ -332,7 +332,7 @@ Notes:
 
 ## Release Process
 
-The current release is `0.4.0`.
+The current release is `0.4.1`.
 
 ```bash
 # Update version metadata
@@ -347,8 +347,8 @@ twine check dist/*
 
 # Publish
 twine upload dist/*
-git tag v0.4.0
-git push origin main v0.4.0
+git tag v0.4.1
+git push origin main v0.4.1
 ```
 
 Tags matching `v*` are intended to represent published PyPI releases.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 - 2026-07-23
+
+- Add Claude-safe skill-fire steer wording and system-message support.
+- Include platform usage context in skill-fire discovery flows.
+- Refresh README placement for the agent bootstrap command.
+- Bump bundled Hermes, hosted skill, and OpenClaw integration metadata to match the CLI release.
+
 ## 0.4.0 - 2026-07-23
 
 - Add every-prompt skill-fire support for Cursor and Hermes.
