@@ -26,16 +26,41 @@ def run_subagent(query: str, *, limit: int, timeout: float, classifier: str = "c
     """
     if not query:
         return ""
+    classifier_model = _classifier.resolve_classifier_model(classifier)
+    # Only Hermes classifies on the agent's own driving model; Claude/Cursor have no way to report
+    # one (see classifier.resolve_classifier_model / claude_hook.py's module docstring).
+    agent_model = classifier_model if classifier == "hermes" else None
     cand_text, skills = candidates.fetch_skill_candidates(
-        query, limit=config.CANDIDATE_LIMIT, timeout=min(timeout, 10.0)
+        query,
+        limit=config.CANDIDATE_LIMIT,
+        timeout=min(timeout, 10.0),
+        harness=classifier,
+        classifier_model=classifier_model,
+        model=agent_model,
     )
     if not cand_text:
         return ""
     relevant = _classifier.classify(query, cand_text, timeout=min(timeout, 45.0), backend=classifier)
     if not relevant:
         return ""  # gate closed — not skill-relevant
+    broker.report_recommendation(
+        query,
+        relevant,
+        skills,
+        harness=classifier,
+        classifier_model=classifier_model,
+        model=agent_model,
+    )
     list_block = render.render_list(relevant, skills, limit=limit)
-    content_outcome = broker.upgrade_outcome(query, relevant, skills, timeout=timeout)
+    content_outcome = broker.upgrade_outcome(
+        query,
+        relevant,
+        skills,
+        timeout=timeout,
+        harness=classifier,
+        classifier_model=classifier_model,
+        model=agent_model,
+    )
     return render.compose_outcome(list_block, content_outcome)
 
 
@@ -65,21 +90,49 @@ def run_fetch(
         pass
     budget = max(timeout, config.SUBAGENT_TIMEOUT)
     path = _session.cache_path(session)
+    classifier_model = _classifier.resolve_classifier_model(classifier)
+    # Only Hermes classifies on the agent's own driving model; Claude/Cursor have no way to report
+    # one (see classifier.resolve_classifier_model / claude_hook.py's module docstring).
+    agent_model = classifier_model if classifier == "hermes" else None
     cand_text, skills = candidates.fetch_skill_candidates(
-        query, limit=config.CANDIDATE_LIMIT, timeout=min(budget, 10.0)
+        query,
+        limit=config.CANDIDATE_LIMIT,
+        timeout=min(budget, 10.0),
+        harness=classifier,
+        session=session,
+        classifier_model=classifier_model,
+        model=agent_model,
     )
     if not cand_text:
         return
     relevant = _classifier.classify(query, cand_text, timeout=min(budget, 45.0), backend=classifier)
     if not relevant:
         return  # gate closed — not skill-relevant
+    broker.report_recommendation(
+        query,
+        relevant,
+        skills,
+        harness=classifier,
+        session=session,
+        classifier_model=classifier_model,
+        model=agent_model,
+    )
     # Every cached outcome goes through render.compose_outcome so the user-block delimiters the
     # steer references are always present — even list-only. Phase 1 caches fast but NOT final (it
     # names skills without any methodology, so a steer on it would hand the agent nothing to apply).
     list_block = render.render_list(relevant, skills, limit=limit)
     _session.cache_write(path, render.compose_outcome(list_block, ""), final=False)
     # Phase 2: attach the top match's actionable SKILL.md content and mark the outcome final.
-    content_outcome = broker.upgrade_outcome(query, relevant, skills, timeout=budget)
+    content_outcome = broker.upgrade_outcome(
+        query,
+        relevant,
+        skills,
+        timeout=budget,
+        harness=classifier,
+        session=session,
+        classifier_model=classifier_model,
+        model=agent_model,
+    )
     if _session.emit_marker(path).exists():
         return  # something already steered — don't rewrite what was shown
     # If no content is reachable (no npx / all fetches missed), promote the fenced list to final

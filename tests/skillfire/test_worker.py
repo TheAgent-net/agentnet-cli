@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from agentnet_cli.tools.skillfire import render, session, worker
 
 _NEGOTIATE = "agentnet_cli.tools.skillfire.broker.negotiate_via_platform"
+_REPORT_RECOMMENDATION = "agentnet_cli.tools.skillfire.broker.report_recommendation"
 
 # ── run_subagent (gate -> SKILL.md content, else brokered A2A, else pointer) ──
 _SKILL_INFO = {"repo": "r/foo", "install_cmd": "npx skills add r/foo@Foo",
@@ -35,6 +36,7 @@ def _run_subagent(query="review my code",
         patch("agentnet_cli.tools.skillfire.classifier.subprocess.run", fake_run),
         patch("agentnet_cli.tools.skillfire.content.build_content_outcome", content_mock),
         patch(_NEGOTIATE, negotiate),
+        patch(_REPORT_RECOMMENDATION),  # never let usage telemetry make a real network call in tests
     ):
         text = worker.run_subagent(query, limit=5, timeout=30)
     captured["negotiate"] = negotiate
@@ -124,6 +126,7 @@ def _patch_fetch(cache, *, cand=_CAND, relevant=None, upgrade="CONTENT skill"):
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", return_value=cand),
         patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=relevant),
         patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=upgrade),
+        patch(_REPORT_RECOMMENDATION),  # never let usage telemetry make a real network call in tests
     )
 
 
@@ -131,7 +134,7 @@ def test_fetch_composes_list_and_content(tmp_path):
     # Phase 1 writes the recommendation list; phase 2 appends the top match's methodology.
     cache = tmp_path / "s.json"
     p = _patch_fetch(cache, upgrade="CONTENT skill")
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2], p[3], p[4]:
         worker.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     outcome = json.loads(cache.read_text())["outcome"]
     assert "AgentNet found these skills" in outcome and "Foo" in outcome  # the list
@@ -149,7 +152,7 @@ def test_fetch_phase1_is_not_final_phase2_is(tmp_path):
         real_write(path, outcome, final=final)
 
     p = _patch_fetch(cache, upgrade="CONTENT skill")
-    with p[0], p[1], p[2], p[3], patch("agentnet_cli.tools.skillfire.session.cache_write", spy):
+    with p[0], p[1], p[2], p[3], p[4], patch("agentnet_cli.tools.skillfire.session.cache_write", spy):
         worker.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     assert seen == [False, True]  # phase 1 non-final, phase 2 final
     assert json.loads(cache.read_text())["final"] is True
@@ -159,7 +162,7 @@ def test_fetch_promotes_list_to_final_when_no_content(tmp_path):
     # No content reachable -> promote the list to final so the steer isn't blocked forever.
     cache = tmp_path / "s.json"
     p = _patch_fetch(cache, upgrade="")
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2], p[3], p[4]:
         worker.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     data = json.loads(cache.read_text())
     assert data["final"] is True and "Foo" in data["outcome"]
@@ -182,7 +185,7 @@ def test_fetch_phase1_outcome_is_fenced(tmp_path):
         real(path, outcome, final=final)
 
     p = _patch_fetch(cache, upgrade="CONTENT skill")
-    with p[0], p[1], p[2], p[3], patch("agentnet_cli.tools.skillfire.session.cache_write", spy):
+    with p[0], p[1], p[2], p[3], p[4], patch("agentnet_cli.tools.skillfire.session.cache_write", spy):
         worker.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     phase1_outcome, phase1_final = writes[0]
     assert phase1_final is False and render.USER_BLOCK_START in phase1_outcome
@@ -194,7 +197,7 @@ def test_fetch_skips_upgrade_after_steer(tmp_path):
     session.emit_marker(cache).parent.mkdir(parents=True, exist_ok=True)
     session.emit_marker(cache).touch()
     p = _patch_fetch(cache, upgrade="CONTENT skill")
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2], p[3], p[4]:
         worker.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     outcome = json.loads(cache.read_text())["outcome"]
     assert "Foo" in outcome and "CONTENT skill" not in outcome  # stayed the list
@@ -204,7 +207,7 @@ def test_fetch_keeps_list_when_upgrade_empty(tmp_path):
     # No content + no broker -> the fast recommendation list stays cached.
     cache = tmp_path / "s.json"
     p = _patch_fetch(cache, upgrade="")
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2], p[3], p[4]:
         worker.run_fetch(session="s1", query="review sql", limit=5, timeout=3.0)
     outcome = json.loads(cache.read_text())["outcome"]
     assert "AgentNet found these skills" in outcome and "Foo" in outcome
@@ -226,7 +229,7 @@ def test_fetch_runs_auto_update_off_critical_path(monkeypatch):
 def test_fetch_writes_nothing_when_gate_closed(tmp_path):
     cache = tmp_path / "s.json"
     p = _patch_fetch(cache, relevant=[])  # classifier: nothing relevant
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2], p[3], p[4]:
         worker.run_fetch(session="s1", query="what is 2+2", limit=5, timeout=3.0)
     assert not cache.exists()  # gate closed -> no cache -> hooks no-op -> zero latency
 
@@ -234,6 +237,126 @@ def test_fetch_writes_nothing_when_gate_closed(tmp_path):
 def test_fetch_writes_nothing_when_no_candidates(tmp_path):
     cache = tmp_path / "s.json"
     p = _patch_fetch(cache, cand=("", {}))
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2], p[3], p[4]:
         worker.run_fetch(session="s1", query="x", limit=5, timeout=3.0)
     assert not cache.exists()
+
+
+# ── harness/session/classifier_model/model forwarded to the platform call ────
+def test_fetch_passes_harness_session_and_classifier_model(tmp_path):
+    cache = tmp_path / "s.json"
+    fetch_mock = MagicMock(return_value=_CAND)
+    with (
+        patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", fetch_mock),
+        patch("agentnet_cli.tools.skillfire.classifier.classify",
+              return_value=[{"name": "Foo", "why": "helps"}]),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value="") as upgrade,
+        patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
+              return_value="claude-haiku-4-5-20251001"),
+        patch(_REPORT_RECOMMENDATION),
+    ):
+        worker.run_fetch(session="s9", query="review sql", limit=5, timeout=3.0, classifier="claude")
+    fetch_kwargs = fetch_mock.call_args.kwargs
+    assert fetch_kwargs["harness"] == "claude"
+    assert fetch_kwargs["session"] == "s9"
+    assert fetch_kwargs["classifier_model"] == "claude-haiku-4-5-20251001"
+    assert fetch_kwargs["model"] is None  # not hermes -> no separate "agent's own model" to report
+    upgrade_kwargs = upgrade.call_args.kwargs
+    assert upgrade_kwargs["harness"] == "claude"
+    assert upgrade_kwargs["session"] == "s9"
+    assert upgrade_kwargs["model"] is None
+
+
+def test_fetch_sets_model_only_for_hermes(tmp_path):
+    cache = tmp_path / "s.json"
+    fetch_mock = MagicMock(return_value=_CAND)
+    with (
+        patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", fetch_mock),
+        patch("agentnet_cli.tools.skillfire.classifier.classify",
+              return_value=[{"name": "Foo", "why": "helps"}]),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
+        patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
+              return_value="provider/model"),
+        patch(_REPORT_RECOMMENDATION),
+    ):
+        worker.run_fetch(session="s9", query="review sql", limit=5, timeout=3.0, classifier="hermes")
+    fetch_kwargs = fetch_mock.call_args.kwargs
+    assert fetch_kwargs["harness"] == "hermes"
+    assert fetch_kwargs["classifier_model"] == "provider/model"
+    assert fetch_kwargs["model"] == "provider/model"  # hermes: same model runs the agent + the gate
+
+
+def test_run_subagent_passes_harness_and_classifier_model():
+    fetch_mock = MagicMock(return_value=("- Foo: x", {"Foo": _SKILL_INFO}))
+    with (
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", fetch_mock),
+        patch("agentnet_cli.tools.skillfire.classifier.classify",
+              return_value=[{"name": "Foo", "why": "helps"}]),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value="") as upgrade,
+        patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
+              return_value="gpt-5-mini"),
+        patch(_REPORT_RECOMMENDATION),
+    ):
+        worker.run_subagent("review my code", limit=5, timeout=30, classifier="cursor")
+    fetch_kwargs = fetch_mock.call_args.kwargs
+    assert fetch_kwargs["harness"] == "cursor"
+    assert fetch_kwargs["classifier_model"] == "gpt-5-mini"
+    assert fetch_kwargs["model"] is None  # not hermes
+    assert upgrade.call_args.kwargs["harness"] == "cursor"
+
+
+# ── report_recommendation: fired once the gate opens, with the right context ──
+def test_fetch_reports_recommendation_when_gate_opens(tmp_path):
+    cache = tmp_path / "s.json"
+    relevant = [{"name": "Foo", "why": "helps"}]
+    with (
+        patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", return_value=_CAND),
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=relevant),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
+        patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
+              return_value="claude-haiku-4-5-20251001"),
+        patch(_REPORT_RECOMMENDATION) as report,
+    ):
+        worker.run_fetch(session="s9", query="review sql", limit=5, timeout=3.0, classifier="claude")
+    report.assert_called_once()
+    args, kwargs = report.call_args
+    assert args[0] == "review sql"
+    assert args[1] == relevant
+    assert args[2] == _CAND[1]  # the skills dict
+    assert kwargs["harness"] == "claude"
+    assert kwargs["session"] == "s9"
+    assert kwargs["classifier_model"] == "claude-haiku-4-5-20251001"
+    assert kwargs["model"] is None
+
+
+def test_run_subagent_reports_recommendation_when_gate_opens():
+    relevant = [{"name": "Foo", "why": "helps"}]
+    with (
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates",
+              return_value=("- Foo: x", {"Foo": _SKILL_INFO})),
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=relevant),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
+        patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
+              return_value="provider/model"),
+        patch(_REPORT_RECOMMENDATION) as report,
+    ):
+        worker.run_subagent("review my code", limit=5, timeout=30, classifier="hermes")
+    report.assert_called_once()
+    kwargs = report.call_args.kwargs
+    assert kwargs["harness"] == "hermes"
+    assert kwargs["model"] == "provider/model"  # hermes: same model runs the agent + the gate
+
+
+def test_fetch_does_not_report_when_gate_closed(tmp_path):
+    cache = tmp_path / "s.json"
+    with (
+        patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", return_value=_CAND),
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=[]),  # gate closed
+        patch(_REPORT_RECOMMENDATION) as report,
+    ):
+        worker.run_fetch(session="s9", query="what is 2+2", limit=5, timeout=3.0)
+    report.assert_not_called()

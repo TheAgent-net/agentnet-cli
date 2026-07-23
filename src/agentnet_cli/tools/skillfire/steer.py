@@ -97,3 +97,41 @@ def check_fallback(session: str, *, timeout: float) -> str | None:
     if not outcome or not _session.claim(_session.emit_marker(path)):
         return None
     return fold_context(outcome)
+
+
+def check_steer_raw(session: str) -> str | None:
+    """Same decision as :func:`check_steer`, but returns the bare ``outcome`` — no wrapper text.
+
+    Lets a harness build its own steer wording around the same claim/final/cache mechanics, instead
+    of the shared ``steer_reason`` framing. Duplicates :func:`check_steer`'s mechanics rather than
+    calling it, so that function's behavior for existing callers is untouched by this addition.
+    """
+    path = _session.cache_path(session)
+    data = _session.cache_read(path)
+    if not data or not data.get("outcome"):
+        return None  # not ready or nothing relevant
+    if not data.get("final"):
+        return None  # phase-1 list only — nothing to apply yet; let a later tool call steer instead
+    if not _session.claim(_session.emit_marker(path)):
+        return None  # another peek/post (or a duplicate hook) already steered
+    return data["outcome"]
+
+
+def check_fallback_raw(session: str, *, timeout: float) -> str | None:
+    """Same decision as :func:`check_fallback`, but returns the bare ``outcome`` — no wrapper text.
+
+    See :func:`check_steer_raw` — same rationale, duplicated mechanics rather than a shared call.
+    """
+    path = _session.cache_path(session)
+    deadline = time.monotonic() + min(timeout, _MAX_POST_WAIT)
+    data = _session.cache_read(path)
+    while (not data or not data.get("outcome") or not data.get("final")) and (
+        time.monotonic() < deadline
+    ):
+        time.sleep(_POST_POLL_INTERVAL)
+        data = _session.cache_read(path)
+
+    outcome = (data or {}).get("outcome") or ""
+    if not outcome or not _session.claim(_session.emit_marker(path)):
+        return None
+    return outcome

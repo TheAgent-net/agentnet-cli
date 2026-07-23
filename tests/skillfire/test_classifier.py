@@ -118,3 +118,40 @@ def test_hermes_classifier_shares_memory(monkeypatch):
     assert "memory" in captured["disabled_toolsets"]  # tool still disabled (one-shot gate)
     assert captured["max_iterations"] == 1
     assert config.CLASSIFIER_PROMPT in captured["prompt"]
+
+
+# ── resolve_classifier_model (pure lookup, no invocation) ─────────────────────
+def test_resolve_classifier_model_claude_is_fixed():
+    assert classifier.resolve_classifier_model("claude") == config.SUBAGENT_MODEL
+
+
+def test_resolve_classifier_model_cursor_reads_env(monkeypatch):
+    monkeypatch.delenv(config.CURSOR_MODEL_ENV, raising=False)
+    assert classifier.resolve_classifier_model("cursor") is None  # not pinned -> unknown, not guessed
+    monkeypatch.setenv(config.CURSOR_MODEL_ENV, "gpt-5-mini")
+    assert classifier.resolve_classifier_model("cursor") == "gpt-5-mini"
+
+
+def test_resolve_classifier_model_hermes_uses_gateway(monkeypatch):
+    import sys
+    import types
+
+    fake_gateway_run = types.ModuleType("gateway.run")
+    fake_gateway_run._resolve_gateway_model = lambda: "provider/model"
+    fake_gateway = types.ModuleType("gateway")
+    fake_gateway.run = fake_gateway_run
+    monkeypatch.setitem(sys.modules, "gateway", fake_gateway)
+    monkeypatch.setitem(sys.modules, "gateway.run", fake_gateway_run)
+    assert classifier.resolve_classifier_model("hermes") == "provider/model"
+
+
+def test_resolve_classifier_model_hermes_none_outside_hermes(monkeypatch):
+    import sys
+
+    monkeypatch.delitem(sys.modules, "gateway.run", raising=False)
+    monkeypatch.delitem(sys.modules, "gateway", raising=False)
+    assert classifier.resolve_classifier_model("hermes") is None
+
+
+def test_resolve_classifier_model_unknown_backend():
+    assert classifier.resolve_classifier_model("something-else") is None

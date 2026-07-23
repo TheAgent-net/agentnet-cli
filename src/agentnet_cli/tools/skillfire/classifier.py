@@ -153,6 +153,30 @@ def _parse_classifier_json(stdout: str) -> list[dict[str, str]]:
     return out
 
 
+def resolve_classifier_model(backend: str) -> str | None:
+    """Best-effort, no-invocation lookup of which model *would* run the gate for ``backend``.
+
+    A pure lookup — never runs the classifier, never shells out — so it's cheap to call just to
+    attach context to an outgoing request. Returns ``None`` when the model can't be determined
+    (e.g. the user hasn't pinned a Cursor model, or this isn't running inside Hermes' venv) rather
+    than guessing.
+    """
+    if backend == "claude":
+        return config.SUBAGENT_MODEL
+    if backend == "cursor":
+        return os.environ.get(config.CURSOR_MODEL_ENV, "").strip() or None
+    if backend == "hermes":
+        try:
+            from gateway.run import _resolve_gateway_model  # noqa: PLC0415
+        except Exception:  # noqa: BLE001 — not running inside Hermes
+            return None
+        try:
+            return _resolve_gateway_model()
+        except Exception:  # noqa: BLE001 — best-effort
+            return None
+    return None
+
+
 def classify(
     query: str, cand_text: str, *, timeout: float, backend: str = "claude"
 ) -> list[dict[str, str]]:

@@ -155,12 +155,31 @@ class SkillDiscovery:
 
     # ── Platform API mode ─────────────────────────────────────────
 
-    def _discover_via_platform(self, use_case: str, limit: int) -> dict[str, Any]:
+    def _discover_via_platform(
+        self,
+        use_case: str,
+        limit: int,
+        *,
+        harness: str | None = None,
+        session: str | None = None,
+        classifier_model: str | None = None,
+        model: str | None = None,
+    ) -> dict[str, Any]:
         from agentnet_cli import __version__  # noqa: PLC0415
+
+        params: dict[str, Any] = {"use_case": use_case, "limit": limit}
+        if harness:
+            params["harness"] = harness
+        if session:
+            params["session_id"] = session
+        if classifier_model:
+            params["classifier_model"] = classifier_model
+        if model:
+            params["model"] = model
 
         resp = self._http.get(
             f"{self._platform_url}/skills/discover",
-            params={"use_case": use_case, "limit": limit},
+            params=params,
             headers={
                 "Authorization": f"Bearer {self._api_token}",
                 "User-Agent": f"agentnet-cli/{__version__}",
@@ -469,10 +488,29 @@ class SkillDiscovery:
 
     # ── Main entry point ─────────────────────────────────────────
 
-    def discover(self, *, use_case: str, limit: int = 10) -> dict[str, Any]:
+    def discover(
+        self,
+        *,
+        use_case: str,
+        limit: int = 10,
+        harness: str | None = None,
+        session: str | None = None,
+        classifier_model: str | None = None,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        """``harness``/``session``/``classifier_model``/``model`` are optional call context for the
+        platform request (which harness/session/model triggered this) — every one is best-effort;
+        omitted entirely when unknown, never required for discovery to work."""
         if self._can_use_platform:
             try:
-                return self._discover_via_platform(use_case, limit)
+                return self._discover_via_platform(
+                    use_case,
+                    limit,
+                    harness=harness,
+                    session=session,
+                    classifier_model=classifier_model,
+                    model=model,
+                )
             except Exception:
                 pass
 

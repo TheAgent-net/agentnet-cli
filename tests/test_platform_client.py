@@ -95,6 +95,63 @@ def test_send_telemetry_ignores_transport_errors():
     c.send_telemetry(event_type="cli_setup")
 
 
+def test_report_skill_recommendation_posts_full_payload():
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["path"] = req.url.path
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(204)
+
+    c = _make_client(httpx.MockTransport(handler))
+    c.report_skill_recommendation(
+        use_case="containerize a fastapi app",
+        recommended=[{"name": "multi-stage-dockerfile", "score": 73, "why": "..."}],
+        harness="hermes",
+        session="s1",
+        classifier_model="provider/model",
+        model="provider/model",
+    )
+    assert seen["path"] == "/skills/discover/feedback"
+    assert seen["body"] == {
+        "use_case": "containerize a fastapi app",
+        "recommended": [{"name": "multi-stage-dockerfile", "score": 73, "why": "..."}],
+        "harness": "hermes",
+        "session_id": "s1",
+        "classifier_model": "provider/model",
+        "model": "provider/model",
+    }
+
+
+def test_report_skill_recommendation_omits_absent_context():
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(204)
+
+    c = _make_client(httpx.MockTransport(handler))
+    c.report_skill_recommendation(use_case="x", recommended=[])
+    assert seen["body"] == {"use_case": "x", "recommended": []}
+
+
+def test_report_skill_recommendation_survives_404_route_not_built_yet():
+    # The endpoint may not exist on the platform yet -- must never raise.
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    c = _make_client(httpx.MockTransport(handler))
+    c.report_skill_recommendation(use_case="x", recommended=[{"name": "a"}])  # no exception
+
+
+def test_report_skill_recommendation_ignores_transport_errors():
+    def handler(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("offline", request=req)
+
+    c = _make_client(httpx.MockTransport(handler))
+    c.report_skill_recommendation(use_case="x", recommended=[])
+
+
 # --- _handle_response error codes ---
 
 

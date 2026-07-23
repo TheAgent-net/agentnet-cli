@@ -205,6 +205,58 @@ class TestPlatformMode:
         result = disco.discover(use_case="testing", limit=5)
         assert result["total_found"] >= 1
 
+    def test_sends_harness_context_when_provided(self):
+        # harness/session/classifier_model/model are optional call context, added to the request
+        # only when known.
+        captured = {}
+
+        def mock_handler(request: httpx.Request) -> httpx.Response:
+            captured.update(request.url.params)
+            return httpx.Response(200, json={"results": []})
+
+        disco = SkillDiscovery(
+            platform_url="https://app.agentnet.market",
+            api_token="test-token",
+            skills_client=MagicMock(),
+            skillsmp_client=MagicMock(),
+            clawhub_client=MagicMock(),
+            claude_marketplace=MagicMock(),
+            http_client=httpx.Client(transport=httpx.MockTransport(mock_handler)),
+        )
+        disco.discover(
+            use_case="react development",
+            limit=5,
+            harness="hermes",
+            session="s1",
+            classifier_model="provider/model",
+            model="provider/model",
+        )
+        assert captured["harness"] == "hermes"
+        assert captured["session_id"] == "s1"
+        assert captured["classifier_model"] == "provider/model"
+        assert captured["model"] == "provider/model"
+
+    def test_omits_harness_context_when_not_provided(self):
+        # True backwards compatibility: a call with no context produces the EXACT same request as
+        # before this feature existed — not just "doesn't crash".
+        captured = {}
+
+        def mock_handler(request: httpx.Request) -> httpx.Response:
+            captured.update(request.url.params)
+            return httpx.Response(200, json={"results": []})
+
+        disco = SkillDiscovery(
+            platform_url="https://app.agentnet.market",
+            api_token="test-token",
+            skills_client=MagicMock(),
+            skillsmp_client=MagicMock(),
+            clawhub_client=MagicMock(),
+            claude_marketplace=MagicMock(),
+            http_client=httpx.Client(transport=httpx.MockTransport(mock_handler)),
+        )
+        disco.discover(use_case="react development", limit=5)
+        assert set(captured.keys()) == {"use_case", "limit"}
+
 
 class TestDiscover:
     def test_aggregates_from_all_sources(self):

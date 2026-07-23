@@ -6,13 +6,24 @@ from . import config
 
 
 def fetch_skill_candidates(
-    query: str, *, limit: int, timeout: float
+    query: str,
+    *,
+    limit: int,
+    timeout: float,
+    harness: str | None = None,
+    session: str | None = None,
+    classifier_model: str | None = None,
+    model: str | None = None,
 ) -> tuple[str, dict[str, dict[str, str]]]:
     """Installable skill candidates for the prompt.
 
     Returns ``(candidate_text, {slug: {repo, url, install_cmd, desc}})`` sourced from
     ``discover_skills`` (skills.sh) — only skills.sh results, since their ``<repo>@<slug>`` is what
     ``skills use`` fetches. ``("", {})`` on any issue (best-effort).
+
+    ``harness``/``session``/``classifier_model``/``model`` are optional context forwarded to the
+    platform call (see :meth:`SkillDiscovery.discover`) — every one is best-effort and safe to omit;
+    a missing value here never blocks discovery.
     """
     creds = config.resolve_credentials()
     if creds is None:
@@ -27,7 +38,14 @@ def fetch_skill_candidates(
         platform_url=platform_url, api_token=token, http_client=httpx.Client(timeout=timeout)
     )
     try:
-        raw = discovery.discover(use_case=query, limit=limit)
+        raw = discovery.discover(
+            use_case=query,
+            limit=limit,
+            harness=harness,
+            session=session,
+            classifier_model=classifier_model,
+            model=model,
+        )
     except Exception:  # noqa: BLE001 — best-effort
         return "", {}
     finally:
