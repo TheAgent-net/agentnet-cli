@@ -33,6 +33,8 @@ def test_fetch_skill_candidates_best_effort():
 
 
 def test_fetch_skill_candidates_forwards_context():
+    # Only harness + session ride on the retrieval call. The gate model is deliberately not
+    # forwarded here — discovery runs before the classifier, so which model gates is unknown.
     with (
         patch(_CREDS, return_value=("t", "p")),
         patch(_DISCOVER_SKILLS, return_value=_RAW_SKILLS) as discover,
@@ -43,14 +45,12 @@ def test_fetch_skill_candidates_forwards_context():
             timeout=8,
             harness="hermes",
             session="s1",
-            classifier_model="provider/model",
-            model="provider/model",
         )
     _args, kwargs = discover.call_args
     assert kwargs["harness"] == "hermes"
     assert kwargs["session"] == "s1"
-    assert kwargs["classifier_model"] == "provider/model"
-    assert kwargs["model"] == "provider/model"
+    assert "classifier_model" not in kwargs  # gate model never rides on retrieval
+    assert "model" not in kwargs
 
 
 def test_fetch_skill_candidates_omits_context_when_not_given():
@@ -62,5 +62,3 @@ def test_fetch_skill_candidates_omits_context_when_not_given():
     _args, kwargs = discover.call_args
     assert kwargs["harness"] is None
     assert kwargs["session"] is None
-    assert kwargs["classifier_model"] is None
-    assert kwargs["model"] is None

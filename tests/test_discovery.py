@@ -206,8 +206,9 @@ class TestPlatformMode:
         assert result["total_found"] >= 1
 
     def test_sends_harness_context_when_provided(self):
-        # harness/session/classifier_model/model are optional call context, added to the request
-        # only when known.
+        # harness/session are optional call context, added to the retrieval request only when known.
+        # No classifier_model/model: discovery precedes the gate, so the gate model is unknown here
+        # and is attributed only on the post-classification records (feedback + brokered A2A).
         captured = {}
 
         def mock_handler(request: httpx.Request) -> httpx.Response:
@@ -228,13 +229,12 @@ class TestPlatformMode:
             limit=5,
             harness="hermes",
             session="s1",
-            classifier_model="provider/model",
-            model="provider/model",
         )
         assert captured["harness"] == "hermes"
         assert captured["session_id"] == "s1"
-        assert captured["classifier_model"] == "provider/model"
-        assert captured["model"] == "provider/model"
+        # The gate model never rides on the retrieval call — even if a caller knew one.
+        assert "classifier_model" not in captured
+        assert "model" not in captured
 
     def test_omits_harness_context_when_not_provided(self):
         # True backwards compatibility: a call with no context produces the EXACT same request as

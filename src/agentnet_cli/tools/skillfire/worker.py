@@ -26,16 +26,14 @@ def run_subagent(query: str, *, limit: int, timeout: float, classifier: str = "c
     """
     if not query:
         return ""
-    # Resolved for the REQUESTED backend — this is the best information available before classify()
-    # has run, so it's what the discovery call (which fires first) gets attributed to.
-    requested_model = _classifier.resolve_classifier_model(classifier)
+    # Discovery is candidate *retrieval* — it runs before the gate, so it carries only harness +
+    # session, never a gate model (which backend/model classifies isn't known yet and can fall
+    # back). The gate model is attributed below, on the post-classification records.
     cand_text, skills = candidates.fetch_skill_candidates(
         query,
         limit=config.CANDIDATE_LIMIT,
         timeout=min(timeout, 10.0),
         harness=classifier,
-        classifier_model=requested_model,
-        model=requested_model if classifier == "hermes" else None,
     )
     if not cand_text:
         return ""
@@ -101,17 +99,15 @@ def run_fetch(
         pass
     budget = max(timeout, config.SUBAGENT_TIMEOUT)
     path = _session.cache_path(session)
-    # Resolved for the REQUESTED backend — this is the best information available before classify()
-    # has run, so it's what the discovery call (which fires first) gets attributed to.
-    requested_model = _classifier.resolve_classifier_model(classifier)
+    # Discovery is candidate *retrieval* — it runs before the gate, so it carries only harness +
+    # session, never a gate model (which backend/model classifies isn't known yet and can fall
+    # back). The gate model is attributed below, on the post-classification records.
     cand_text, skills = candidates.fetch_skill_candidates(
         query,
         limit=config.CANDIDATE_LIMIT,
         timeout=min(budget, 10.0),
         harness=classifier,
         session=session,
-        classifier_model=requested_model,
-        model=requested_model if classifier == "hermes" else None,
     )
     if not cand_text:
         return

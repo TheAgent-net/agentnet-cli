@@ -243,8 +243,11 @@ def test_fetch_writes_nothing_when_no_candidates(tmp_path):
     assert not cache.exists()
 
 
-# ── harness/session/classifier_model/model forwarded to the platform call ────
-def test_fetch_passes_harness_session_and_classifier_model(tmp_path):
+# ── harness/session forwarded to discovery; gate model only on post-gate records ──
+def test_fetch_passes_harness_session_to_discovery_but_not_gate_model(tmp_path):
+    # Discovery (retrieval) carries harness + session only. The gate model rides on the post-gate
+    # records (upgrade_outcome/broker + report), never on discovery — discovery runs before the
+    # classifier, so which model gates isn't known yet (and can fall back).
     cache = tmp_path / "s.json"
     fetch_mock = MagicMock(return_value=_CAND)
     with (
@@ -261,15 +264,17 @@ def test_fetch_passes_harness_session_and_classifier_model(tmp_path):
     fetch_kwargs = fetch_mock.call_args.kwargs
     assert fetch_kwargs["harness"] == "claude"
     assert fetch_kwargs["session"] == "s9"
-    assert fetch_kwargs["classifier_model"] == "claude-haiku-4-5-20251001"
-    assert fetch_kwargs["model"] is None  # not hermes -> no separate "agent's own model" to report
+    assert "classifier_model" not in fetch_kwargs  # gate model never on the retrieval call
+    assert "model" not in fetch_kwargs
+    # ...but the post-gate record does carry the actual gate model.
     upgrade_kwargs = upgrade.call_args.kwargs
     assert upgrade_kwargs["harness"] == "claude"
     assert upgrade_kwargs["session"] == "s9"
+    assert upgrade_kwargs["classifier_model"] == "claude-haiku-4-5-20251001"
     assert upgrade_kwargs["model"] is None
 
 
-def test_fetch_sets_model_only_for_hermes(tmp_path):
+def test_fetch_sets_model_only_for_hermes_on_post_gate_records(tmp_path):
     cache = tmp_path / "s.json"
     fetch_mock = MagicMock(return_value=_CAND)
     with (
@@ -277,19 +282,21 @@ def test_fetch_sets_model_only_for_hermes(tmp_path):
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", fetch_mock),
         patch("agentnet_cli.tools.skillfire.classifier.classify",
               return_value=([{"name": "Foo", "why": "helps"}], "hermes")),
-        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value="") as upgrade,
         patch("agentnet_cli.tools.skillfire.classifier.resolve_classifier_model",
               return_value="provider/model"),
         patch(_REPORT_RECOMMENDATION),
     ):
         worker.run_fetch(session="s9", query="review sql", limit=5, timeout=3.0, classifier="hermes")
-    fetch_kwargs = fetch_mock.call_args.kwargs
-    assert fetch_kwargs["harness"] == "hermes"
-    assert fetch_kwargs["classifier_model"] == "provider/model"
-    assert fetch_kwargs["model"] == "provider/model"  # hermes: same model runs the agent + the gate
+    # Discovery still gets no gate model, even for hermes.
+    assert "classifier_model" not in fetch_mock.call_args.kwargs
+    upgrade_kwargs = upgrade.call_args.kwargs
+    assert upgrade_kwargs["harness"] == "hermes"
+    assert upgrade_kwargs["classifier_model"] == "provider/model"
+    assert upgrade_kwargs["model"] == "provider/model"  # hermes: same model runs the agent + gate
 
 
-def test_run_subagent_passes_harness_and_classifier_model():
+def test_run_subagent_passes_harness_to_discovery_gate_model_on_post_gate():
     fetch_mock = MagicMock(return_value=("- Foo: x", {"Foo": _SKILL_INFO}))
     with (
         patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", fetch_mock),
@@ -303,9 +310,11 @@ def test_run_subagent_passes_harness_and_classifier_model():
         worker.run_subagent("review my code", limit=5, timeout=30, classifier="cursor")
     fetch_kwargs = fetch_mock.call_args.kwargs
     assert fetch_kwargs["harness"] == "cursor"
-    assert fetch_kwargs["classifier_model"] == "gpt-5-mini"
-    assert fetch_kwargs["model"] is None  # not hermes
-    assert upgrade.call_args.kwargs["harness"] == "cursor"
+    assert "classifier_model" not in fetch_kwargs  # gate model never on retrieval
+    upgrade_kwargs = upgrade.call_args.kwargs
+    assert upgrade_kwargs["harness"] == "cursor"
+    assert upgrade_kwargs["classifier_model"] == "gpt-5-mini"
+    assert upgrade_kwargs["model"] is None  # not hermes
 
 
 # ── report_recommendation: fired once the gate opens, with the right context ──

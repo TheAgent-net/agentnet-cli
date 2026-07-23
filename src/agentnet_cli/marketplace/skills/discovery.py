@@ -162,8 +162,6 @@ class SkillDiscovery:
         *,
         harness: str | None = None,
         session: str | None = None,
-        classifier_model: str | None = None,
-        model: str | None = None,
     ) -> dict[str, Any]:
         from agentnet_cli import __version__  # noqa: PLC0415
 
@@ -172,10 +170,6 @@ class SkillDiscovery:
             params["harness"] = harness
         if session:
             params["session_id"] = session
-        if classifier_model:
-            params["classifier_model"] = classifier_model
-        if model:
-            params["model"] = model
 
         resp = self._http.get(
             f"{self._platform_url}/skills/discover",
@@ -495,12 +489,17 @@ class SkillDiscovery:
         limit: int = 10,
         harness: str | None = None,
         session: str | None = None,
-        classifier_model: str | None = None,
-        model: str | None = None,
     ) -> dict[str, Any]:
-        """``harness``/``session``/``classifier_model``/``model`` are optional call context for the
-        platform request (which harness/session/model triggered this) — every one is best-effort;
-        omitted entirely when unknown, never required for discovery to work."""
+        """``harness``/``session`` are optional call context for the platform request (which
+        harness/session triggered this retrieval) — best-effort, omitted when unknown, never
+        required for discovery to work.
+
+        Note there is deliberately **no** ``classifier_model``/``model`` here: discovery *retrieves*
+        the candidates that the relevance gate later classifies, so it runs before any classifier
+        and cannot know which model will gate (the backend can even fall back). Attributing a gate
+        model to a retrieval call would be a guess that conflicts with the authoritative model on
+        the post-classification records (feedback + brokered A2A). The gate model is reported only
+        there, where it is actually known."""
         if self._can_use_platform:
             try:
                 return self._discover_via_platform(
@@ -508,8 +507,6 @@ class SkillDiscovery:
                     limit,
                     harness=harness,
                     session=session,
-                    classifier_model=classifier_model,
-                    model=model,
                 )
             except Exception:
                 pass
