@@ -1,55 +1,100 @@
-# agentnet-cli
+<div align="center">
+  <h1>AgentNet CLI</h1>
+  <p><strong>Connect local AI coding agents to the Agent-net marketplace in one command.</strong></p>
+  <p>
+    Detect Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, and OpenClaw;
+    install the right MCP configs, native plugins, hooks, and marketplace discovery tools;
+    then roll everything back cleanly whenever you need to.
+  </p>
+  <p>
+    <a href="https://pypi.org/project/agentnet-cli/"><img alt="PyPI" src="https://img.shields.io/pypi/v/agentnet-cli?color=2563eb"></a>
+    <a href="https://pypi.org/project/agentnet-cli/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/agentnet-cli"></a>
+    <a href="https://github.com/TheAgent-net/agentnet-cli/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green"></a>
+    <a href="https://github.com/TheAgent-net/agentnet-cli"><img alt="Status" src="https://img.shields.io/badge/status-alpha-f59e0b"></a>
+  </p>
+  <p>
+    <a href="https://agentnet.market">Website</a>
+    &middot;
+    <a href="https://app.agentnet.market">App</a>
+    &middot;
+    <a href="https://pypi.org/project/agentnet-cli/">PyPI</a>
+    &middot;
+    <a href="https://github.com/TheAgent-net/agentnet-cli/issues">Issues</a>
+  </p>
+</div>
 
-Detect AI coding agents on your system and connect them to the [Agent-net](https://agentnet.market) marketplace with one command.
+---
 
-```
+## Why AgentNet CLI?
+
+AgentNet CLI turns your local AI coding tools into marketplace-aware agents. After setup, connected agents can search Agent-net for agents, skills, plugins, and services that match the user's task.
+
+```console
 $ agentnet detect
 
 Agent              Status          Binary
-Claude Code        ● connected     ~/.local/bin/claude
-GitHub Copilot     ● ready         ~/.local/bin/copilot
-Cursor             ○ not found     —
+Claude Code        connected       ~/.local/bin/claude
+GitHub Copilot     ready           ~/.local/bin/copilot
+Cursor             not found       -
 
-  2/7 detected · 1 connected · 1 ready to connect
+  2/7 detected - 1 connected - 1 ready to connect
 
   Next: agentnet connect copilot
 ```
 
-## Related Repos
+### Highlights
 
-- [agentnet-platform](https://github.com/TheAgent-net/agentnet-platform) -- FastAPI backend, sample agents, deployment
-- [agentnet-frontend](https://github.com/TheAgent-net/agentnet-frontend) -- Admin dashboard, user dashboard, marketplace SPAs
+- **One-command setup**: browser sign-in, CLI identity registration, agent detection, and guided configuration.
+- **Broad agent support**: Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, and OpenClaw.
+- **Marketplace discovery**: JSON-first commands and MCP tools for listings, agents, skills, and plugins.
+- **Skill-fire hooks**: surface relevant AgentNet skills during Claude Code, Cursor, and Hermes prompt flows.
+- **Clean rollback**: every injected file is tracked in a local manifest and can be removed with `disconnect`.
+- **Portable installs**: works through `pip`, `pipx`, `uv tool`, source checkout, and `uvx`.
 
-## What It Does
+## Table Of Contents
 
-1. **Sets up** Agent-net with one command: browser sign in/sign up, private CLI agent registration, local agent detection, and guided configuration
-2. **Detects** which AI agents you have installed (Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, OpenClaw)
-3. **Connects** them to Agent-net by injecting MCP server configs, native plugins/skills, and permission auto-approvals
-4. **Disconnects** cleanly -- removes everything it wrote, restores original configs
-5. **Unified search and marketplace commands** -- search listings, agents, skills, and plugins; present relevant options for the user's query (JSON output for piping)
-
-After connecting, your agent can search the marketplace and find installable skills/plugins.
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [Supported Agents](#supported-agents)
+- [Skill-Fire](#skill-fire)
+- [Command Reference](#command-reference)
+- [MCP Tools](#mcp-tools)
+- [Configuration](#configuration)
+- [Local Files](#local-files)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Release Process](#release-process)
+- [Related Repositories](#related-repositories)
+- [License](#license)
 
 ## Install
 
-Requires Python 3.11+.
+AgentNet CLI requires **Python 3.11+**.
 
 ```bash
-# Install from PyPI
+# Install the latest release from PyPI
 pip install agentnet-cli
 
-# Install this release exactly
+# Install the current documented release exactly
 pip install agentnet-cli==0.4.0
 
-# Or run without installing
+# Run without installing globally
 uvx agentnet
 
-# Or install from source
+# Install from source for development
 git clone https://github.com/TheAgent-net/agentnet-cli.git
-cd agentnet-cli && uv sync
+cd agentnet-cli
+uv sync
 ```
 
-## Give this to your agent
+Verify the install:
+
+```bash
+agentnet --version
+agentnet --help
+```
+
+Give this to an AI coding agent when you want it to bootstrap AgentNet for itself:
 
 ```text
 pip install --upgrade agentnet-cli && agentnet setup && agentnet status
@@ -58,180 +103,274 @@ pip install --upgrade agentnet-cli && agentnet setup && agentnet status
 ## Quick Start
 
 ```bash
-# 1. Recommended: sign in and configure detected agents
+# Recommended: sign in and configure every detected agent
 agentnet setup
 
-# Optional manual flow
+# Choose agents one by one instead
+agentnet setup --choose
+
+# Inspect local agent support
 agentnet detect
-agentnet register
+
+# Connect or disconnect manually
 agentnet connect claude
 agentnet connect --all
-
-# Check status
-agentnet status
-
-# Done testing? Clean up
+agentnet disconnect cursor
 agentnet disconnect --all
+
+# Confirm everything is healthy
+agentnet status
 ```
 
-`agentnet setup` opens the browser to Agent-net sign in/sign up. After login,
-the CLI stores credentials automatically, creates a private AgentNet CLI identity,
-detects local agents, and connects **all detected agents** by default. Use
-`agentnet setup --choose` to pick agents individually or skip configuration.
-
-## Updating
-
-```bash
-# Upgrade the package and refresh MCP configs, skills, and plugins
-agentnet update
-```
-
-`agentnet update` detects how you installed the CLI (`uv tool`, `pipx`, `npm`, or `pip`),
-upgrades to the latest PyPI release, then re-applies integrations for connected agents.
-
-Silent auto-update runs in the background when you use connected agents (MCP startup and
-session hooks), rate-limited to once per 24 hours. Disable with `AGENTNET_AUTO_UPDATE=0`.
-Adjust the check interval with `AGENTNET_UPDATE_CHECK_INTERVAL_HOURS` (default `24`).
+`agentnet setup` opens Agent-net sign-in/sign-up in your browser. After login, the CLI stores credentials locally, creates a private AgentNet CLI identity, detects local agents, and configures every detected agent by default.
 
 ## Supported Agents
 
-| Agent | Config Path | What Gets Injected |
-|-------|-------------|-------------------|
-| Claude Code | `~/.claude/` | Native plugin (skills, hooks, MCP) via bundled marketplace |
-| Cursor | `~/.cursor/` | MCP in `.cursor/mcp.json` + `.mdc` rule + subagent |
-| GitHub Copilot | `~/.copilot/` | MCP in `mcp-config.json` + `.agent.md` |
-| VS Code | varies by OS | MCP in settings.json + `instructions.md` |
-| OpenAI Codex | `~/.codex/` | TOML MCP in `config.toml` + `SKILL.md` |
-| Hermes (Nous) | `~/.hermes/` | Native plugin in `plugins/agentnet/` |
-| OpenClaw | `~/.openclaw/` | Native plugin via bundled `integrations/openclaw` |
+| Agent | Local Config | Integration Type | What AgentNet Adds |
+| --- | --- | --- | --- |
+| Claude Code | `~/.claude/` | Native plugin + hooks + MCP | Marketplace skill, search-fire hooks, MCP config, approvals |
+| Cursor | `~/.cursor/` | MCP + rule + hook | `mcp.json`, `.mdc` rule, subagent, skill-fire hook |
+| GitHub Copilot | `~/.copilot/` | MCP + agent instructions | `mcp-config.json`, `.agent.md` |
+| VS Code | OS-specific settings path | MCP + instructions | settings entry plus `instructions.md` |
+| OpenAI Codex | `~/.codex/` | MCP + skill | TOML MCP config plus `SKILL.md` |
+| Hermes (Nous) | `~/.hermes/` | Native plugin + hook | `plugins/agentnet/` plugin plus skill-fire hook |
+| OpenClaw | `~/.openclaw/` | Native plugin | Bundled `integrations/openclaw` plugin |
 
-## Commands
+## Skill-Fire
+
+Skill-fire is AgentNet's prompt-time relevance layer. It watches supported agent prompt flows, searches AgentNet for useful marketplace skills, and nudges the agent only when the result is likely to help.
+
+```bash
+# Install prompt-time AgentNet skill discovery hooks where supported
+agentnet enable-skill-fire
+```
+
+Current skill-fire coverage:
+
+| Agent | Behavior |
+| --- | --- |
+| Claude Code | Adds prompt/search hooks that surface relevant AgentNet skills during Claude Code sessions |
+| Cursor | Installs Cursor hook wiring and rule content for every-prompt marketplace discovery |
+| Hermes | Shares user memory with the skill-fire relevance gate and exposes native hook behavior |
+
+## Command Reference
 
 ### Agent Management
 
 | Command | Description |
-|---------|-------------|
-| `agentnet setup [--choose]` | Browser login plus connect all detected agents (or pick with `--choose`) |
-| `agentnet detect` | Scan for installed AI agents |
+| --- | --- |
+| `agentnet setup [--choose] [--url URL]` | Sign in and configure detected agents; use `--choose` for an interactive selection |
+| `agentnet detect` | Scan the system for supported AI coding agents |
 | `agentnet register` | Sign in through the browser and register a CLI identity |
-| `agentnet connect [agent\|--all]` | Wire an agent into Agent-net via MCP |
-| `agentnet disconnect [agent\|--all]` | Remove all injected files cleanly |
+| `agentnet connect [agent]` | Wire one agent into AgentNet |
+| `agentnet connect --all` | Wire every detected agent |
+| `agentnet disconnect [agent]` | Remove one agent's AgentNet integration |
+| `agentnet disconnect --all` | Remove every tracked AgentNet integration |
 | `agentnet status` | Show registration and connection status |
-| `agentnet update` | Upgrade `agentnet-cli` and refresh connected agent integrations |
-| `agentnet set-path <agent> <path>` | Set custom binary path for an agent |
-| `agentnet clear-path <agent>` | Revert to auto-detection |
+| `agentnet set-path <agent> <path>` | Set a custom binary path for an agent |
+| `agentnet clear-path <agent>` | Revert an agent to auto-detection |
+| `agentnet update` | Upgrade `agentnet-cli` and refresh connected integrations |
+| `agentnet enable-skill-fire` | Install prompt-time AgentNet skill discovery hooks where supported |
 
-### Marketplace (JSON output)
+### Marketplace Commands
 
-All marketplace commands output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
+Marketplace commands write JSON to stdout. Errors use `{"error": "..."}` and exit with code `1`, which makes them convenient for agent subprocesses and shell pipelines.
 
 | Command | Description |
-|---------|-------------|
+| --- | --- |
 | `agentnet discover <query>` | Discover agents and community skills by capability |
-| `agentnet agent <id>` | Get full details about an agent, or the full content of a skill (`agent skill:<id>`) |
+| `agentnet agent <id>` | Get full details for an agent |
+| `agentnet agent skill:<id>` | Fetch the full content for a community skill |
 
-### MCP Server (internal)
-
-`agentnet mcp-serve` starts the MCP stdio server, invoked by agents as a subprocess. Exposes these discovery tools (call `agentnet_search` first):
-
-| Tool | Description |
-|------|-------------|
-| `agentnet_search` | **Canonical entry** — unified search across listings, agents, skills, and plugins |
-| `agentnet_discover` | Narrow to marketplace listings (after search) |
-| `agentnet_discover_agents` | Narrow to agents by name or capability |
-| `agentnet_get_agent` | Get full details about a specific agent |
-| `agentnet_discover_skills` | Advanced — AI-ranked skill/plugin discovery by use case |
-| `agentnet_search_skills` | Advanced — skills.sh keyword search |
-| `agentnet_search_skillsmp` | Advanced — SkillsMP keyword search |
-| `agentnet_search_claude_plugins` | Advanced — Claude Code plugin catalog |
-| `agentnet_search_clawhub` | Advanced — ClawHub / OpenClaw catalog |
-
-Set `AGENTNET_MCP_TOOLS=core` to register only the four core tools (`search`, `discover`, `discover_agents`, `get_agent`).
-
-## Architecture
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full layout. Summary:
-
-```
-src/agentnet_cli/
-├── cli/           # main.py + core commands + marketplace commands
-├── connectors/    # per-agent wiring + templates/
-├── integrations/  # Claude + OpenClaw plugin trees (shipped in the wheel)
-├── infra/         # config, paths, manifest, package_paths
-├── marketplace/   # platform client, catalogs, skills
-└── tools/         # MCP server + Hermes plugin
-```
-
-## How It Works
-
-**Most agents** (Claude, Cursor, Copilot, VS Code, Codex):
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────────┐
-│  Your Agent  │────>│  MCP Server  │────>│  Agent-net Platform  │
-│              │     │  (stdio)     │     │  app.agentnet.market │
-│              │<────│  agentnet    │<────│                     │
-│              │     │  mcp-serve   │     │                     │
-└─────────────┘     └──────────────┘     └─────────────────────┘
-```
-
-**Hermes** uses the native plugin system (no MCP subprocess):
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│   Hermes     │────>│  agentnet plugin │────>│  Agent-net Platform  │
-│              │     │  (in-process)    │     │  app.agentnet.market │
-│              │<────│  register(ctx)   │<────│                     │
-└─────────────┘     └──────────────────┘     └─────────────────────┘
-```
-
-For MCP agents, the CLI writes config files that tell your agent about the MCP server. When the agent starts, it launches the MCP server as a subprocess. For Hermes, the CLI installs a native plugin into `~/.hermes/plugins/agentnet/` that registers tools directly in-process.
-
-## Local Data
-
-```
-~/.agentnet/
-  config.json          # Platform credentials (0600 permissions)
-  manifest.json        # Tracks injected files per agent for rollback
-  backups/             # Original config backups
-```
-
-## Environments
-
-PyPI installs default to production (`https://app.agentnet.market`) with no configuration.
-
-| Environment | How to target | URL |
-|-------------|---------------|-----|
-| Production (default) | *(none)* | `https://app.agentnet.market` |
-| Staging | `AGENTNET_ENV=staging` | `https://agent-net-server.narun.in` |
-| Local dev | `agentnet --dev setup` or `AGENTNET_ENV=development` | `http://localhost:8000` |
-
-Override the URL directly at any time:
+Examples:
 
 ```bash
-# Explicit URL (highest precedence)
+agentnet discover "translate a product page into Spanish"
+agentnet discover "review a pull request for security issues"
+agentnet agent wb-123
+agentnet agent skill:org/weather-forecast
+```
+
+## MCP Tools
+
+`agentnet mcp-serve` starts the internal MCP stdio server. Connected agents launch it as a subprocess and receive marketplace tools.
+
+Call `agentnet_search` first for the best cross-catalog result set.
+
+| Tool | Description |
+| --- | --- |
+| `agentnet_search` | Canonical unified search across listings, agents, skills, and plugins |
+| `agentnet_discover` | Search marketplace listings |
+| `agentnet_discover_agents` | Search agents by name or capability |
+| `agentnet_get_agent` | Fetch full details for an agent or skill |
+| `agentnet_discover_skills` | AI-ranked skill/plugin discovery by use case |
+| `agentnet_search_skills` | Search skills.sh |
+| `agentnet_search_skillsmp` | Search SkillsMP |
+| `agentnet_search_claude_plugins` | Search the Claude Code plugin catalog |
+| `agentnet_search_clawhub` | Search ClawHub / OpenClaw |
+
+For a smaller tool surface:
+
+```bash
+export AGENTNET_MCP_TOOLS=core
+```
+
+That registers only `agentnet_search`, `agentnet_discover`, `agentnet_discover_agents`, and `agentnet_get_agent`.
+
+## Updating
+
+```bash
+agentnet update
+```
+
+`agentnet update` detects the install method (`uv tool`, `pipx`, `npm`, or `pip`), upgrades to the latest PyPI release, and then re-applies integrations for connected agents.
+
+Silent auto-update runs in the background when connected agents start AgentNet MCP or hook flows. It is rate-limited to once every 24 hours.
+
+| Setting | Description |
+| --- | --- |
+| `AGENTNET_AUTO_UPDATE=0` | Disable silent auto-update |
+| `AGENTNET_UPDATE_CHECK_INTERVAL_HOURS=12` | Change the auto-update check interval |
+
+## Configuration
+
+PyPI installs default to production with no extra setup.
+
+| Environment | How To Target It | URL |
+| --- | --- | --- |
+| Production | default | `https://app.agentnet.market` |
+| Staging | `AGENTNET_ENV=staging` | `https://agent-net-server.narun.in` |
+| Local development | `agentnet --dev setup` or `AGENTNET_ENV=development` | `http://localhost:8000` |
+
+Override the platform URL directly:
+
+```bash
+# Highest precedence
 export AGENTNET_PLATFORM_URL=http://localhost:8000
 agentnet setup
 
-# Or per command
+# Per command
 agentnet setup --url http://localhost:8000
 ```
 
-Precedence: `--url` flag → `AGENTNET_PLATFORM_URL` → legacy `AGENTNET_URL` → `AGENTNET_ENV` → saved `~/.agentnet/config.json` → production default.
+URL precedence:
+
+```text
+--url flag
+> AGENTNET_PLATFORM_URL
+> AGENTNET_URL
+> AGENTNET_ENV
+> ~/.agentnet/config.json
+> production default
+```
+
+## Local Files
+
+AgentNet stores credentials and rollback metadata under `~/.agentnet/`.
+
+```text
+~/.agentnet/
+  config.json       # Platform credentials; written with restricted permissions where supported
+  manifest.json     # Tracks injected files per agent for rollback
+  backups/          # Original config backups
+```
+
+The CLI does not blindly overwrite user configuration. Connectors merge into existing config files where possible, create backups when modifying tracked files, and record writes in `manifest.json` so `agentnet disconnect` can remove only the files AgentNet owns.
+
+## Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a deeper module map.
+
+```text
+src/agentnet_cli/
+  cli/             # Typer app, core commands, marketplace commands
+  connectors/      # Per-agent detection, connect/disconnect logic, templates
+  integrations/    # Shipped Claude/OpenClaw/Hermes plugin assets
+  infra/           # Config, paths, manifests, platform URL resolution
+  marketplace/     # Platform API client, catalogs, skill discovery clients
+  tools/           # MCP server, hook entry points, skill-fire runtime
+```
+
+Most agents use MCP:
+
+```text
+Your Agent
+  -> launches `agentnet mcp-serve`
+  -> calls AgentNet MCP tools
+  -> receives marketplace search results
+```
+
+Native-plugin agents use bundled integration trees:
+
+```text
+Hermes / OpenClaw / Claude plugin flow
+  -> loads AgentNet plugin or hook assets
+  -> calls AgentNet platform/catalog clients
+  -> presents relevant agents, skills, and plugins
+```
 
 ## Development
 
 ```bash
-uv sync                          # Install deps
-uv run pytest -v                 # Run tests (354 tests)
-uv run pytest --cov -q           # With coverage
-uv run ruff check .              # Lint
-uv run agentnet --help           # Run locally
+uv sync
+uv run ruff check .
+TMPDIR=/tmp uv run pytest -s tests
+uv run pytest --cov -q
+uv run agentnet --help
 ```
 
-## CI/CD
+Notes:
 
-- **CI**: Lint (ruff) + tests on PRs and pushes to main, across Python 3.11/3.12/3.13
-- **Publish**: Tags matching `v*` trigger PyPI publish via trusted publisher
+- Use Python 3.11 or newer.
+- On WSL with the repo mounted under `/mnt/c`, prefer `TMPDIR=/tmp` for tests that assert POSIX file permissions.
+- Keep connector changes covered by focused tests under `tests/` or `tests/skillfire/`.
+
+## Release Process
+
+The current release is `0.4.0`.
+
+```bash
+# Update version metadata
+$EDITOR pyproject.toml uv.lock
+
+# Validate
+uv run ruff check .
+TMPDIR=/tmp uv run pytest -s tests
+rm -rf dist
+uv build
+twine check dist/*
+
+# Publish
+twine upload dist/*
+git tag v0.4.0
+git push origin main v0.4.0
+```
+
+Tags matching `v*` are intended to represent published PyPI releases.
+
+## Related Repositories
+
+| Repository | Description |
+| --- | --- |
+| [agentnet-platform](https://github.com/TheAgent-net/agentnet-platform) | FastAPI backend, sample agents, deployment |
+| [agentnet-frontend](https://github.com/TheAgent-net/agentnet-frontend) | Admin dashboard, user dashboard, marketplace apps |
+
+## Contributing
+
+Issues and pull requests are welcome. For bug reports, include:
+
+- `agentnet --version`
+- operating system and shell
+- the agent you are trying to connect
+- the command that failed
+- relevant output with secrets removed
+
+## Security
+
+Never commit API tokens or local agent credentials. `~/.agentnet/config.json` contains authentication material and should stay private.
+
+If you find a security issue, please report it privately through the repository security channels instead of opening a public issue.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
