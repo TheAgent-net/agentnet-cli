@@ -49,7 +49,7 @@ def run_subagent(query: str, *, limit: int, timeout: float, classifier: str = "c
     # *model* attribution follows whichever backend actually ran, not the one we asked for.
     actual_model = _classifier.resolve_classifier_model(actual_backend) if actual_backend else None
     agent_model = actual_model if actual_backend == "hermes" else None
-    broker.report_recommendation(
+    report_thread = broker.report_recommendation(
         query,
         relevant,
         skills,
@@ -67,7 +67,12 @@ def run_subagent(query: str, *, limit: int, timeout: float, classifier: str = "c
         classifier_model=actual_model,
         model=agent_model,
     )
-    return render.compose_outcome(list_block, content_outcome)
+    outcome = render.compose_outcome(list_block, content_outcome)
+    # This is the process's last chance to let the report actually reach the network before it
+    # exits (a daemon thread is killed outright on process exit) — bounded so it can never hang;
+    # everything that actually matters (the outcome above) is already computed by this point.
+    report_thread.join(timeout=config.REPORT_JOIN_TIMEOUT)
+    return outcome
 
 
 def run_fetch(
@@ -120,7 +125,7 @@ def run_fetch(
     # *model* attribution follows whichever backend actually ran, not the one we asked for.
     actual_model = _classifier.resolve_classifier_model(actual_backend) if actual_backend else None
     agent_model = actual_model if actual_backend == "hermes" else None
-    broker.report_recommendation(
+    report_thread = broker.report_recommendation(
         query,
         relevant,
         skills,
@@ -146,10 +151,16 @@ def run_fetch(
         model=agent_model,
     )
     if _session.emit_marker(path).exists():
+        # This is still the process's last chance to let the report reach the network before it
+        # exits (a daemon thread is killed outright on exit) — bounded so it can never hang.
+        report_thread.join(timeout=config.REPORT_JOIN_TIMEOUT)
         return  # something already steered — don't rewrite what was shown
     # If no content is reachable (no npx / all fetches missed), promote the fenced list to final
     # rather than leaving the steer blocked forever.
     _session.cache_write(path, render.compose_outcome(list_block, content_outcome), final=True)
+    # Last chance to let the report reach the network before the process exits — bounded so it can
+    # never hang; everything that actually matters (the cache write above) is already done.
+    report_thread.join(timeout=config.REPORT_JOIN_TIMEOUT)
 
 
 def spawn_worker(session: str, prompt: str, *, limit: int, timeout: float, classifier: str) -> None:

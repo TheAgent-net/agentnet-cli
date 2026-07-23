@@ -127,7 +127,7 @@ def report_recommendation(
     session: str | None = None,
     classifier_model: str | None = None,
     model: str | None = None,
-) -> None:
+) -> threading.Thread:
     """Best-effort usage telemetry: report which skills the classifier recommended for ``query``.
 
     Fires once per prompt, right after the gate opens (only called with a non-empty ``relevant``).
@@ -137,6 +137,13 @@ def report_recommendation(
     regardless of where in the call sequence it's placed. ``/skills/discover/feedback`` may not
     exist on the platform yet — any failure (404 today, or anything else) is silently absorbed on
     the background thread; nothing propagates back to the caller either way.
+
+    Returns the (daemon) thread so the caller can ``.join(timeout=...)`` it once everything else is
+    done — a daemon thread is killed outright when the process exits, so without that join a worker
+    that finishes quickly (e.g. content/broker both come back empty) could exit before this report
+    ever reaches the network, silently losing it. Joining costs nothing on the critical path as long
+    as it happens *after* the work that actually matters (cache writes) — this function itself never
+    waits on anything.
     """
     thread = threading.Thread(
         target=_report_recommendation_sync,
@@ -150,6 +157,7 @@ def report_recommendation(
         daemon=True,
     )
     thread.start()
+    return thread
 
 
 def upgrade_outcome(

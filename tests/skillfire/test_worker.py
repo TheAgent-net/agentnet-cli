@@ -391,3 +391,54 @@ def test_fetch_attributes_model_to_the_backend_that_actually_ran(tmp_path):
     upgrade_kwargs = upgrade.call_args.kwargs
     assert upgrade_kwargs["harness"] == "cursor"
     assert upgrade_kwargs["classifier_model"] == "claude-haiku-4-5-20251001"
+
+
+# ── report thread is joined before the worker returns (survives a fast exit) ──
+def _slow_report(delay=0.2):
+    def _side_effect(*a, **k):
+        import time
+
+        time.sleep(delay)
+
+    return MagicMock(side_effect=_side_effect)
+
+
+def test_fetch_report_reaches_network_before_returning(tmp_path):
+    # Regression: report_recommendation dispatches to a daemon thread, which is killed outright if
+    # the process exits before it completes. Without joining it, a worker that otherwise finishes
+    # fast (content/broker both empty, as here) could return -- and the CLI process could exit --
+    # before the HTTP call ever fires, silently losing the report. The network call is deliberately
+    # slower than the rest of the worker's own work, so this would fail without the join: exercises
+    # the REAL thread (not mocked) all the way down to PlatformClient.
+    cache = tmp_path / "s.json"
+    relevant = [{"name": "Foo", "why": "helps"}]
+    report = _slow_report()
+    with (
+        patch("agentnet_cli.tools.skillfire.session.cache_path", return_value=cache),
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates", return_value=_CAND),
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=(relevant, "claude")),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
+        patch("agentnet_cli.tools.skillfire.config.resolve_credentials",
+              return_value=("t", "https://p")),
+        patch("agentnet_cli.marketplace.client.PlatformClient.report_skill_recommendation", report),
+    ):
+        worker.run_fetch(session="s9", query="review sql", limit=5, timeout=3.0, classifier="claude")
+    # No sleep/poll needed: run_fetch already joined the report thread before returning.
+    report.assert_called_once()
+    assert report.call_args.kwargs["use_case"] == "review sql"
+
+
+def test_run_subagent_report_reaches_network_before_returning():
+    relevant = [{"name": "Foo", "why": "helps"}]
+    report = _slow_report()
+    with (
+        patch("agentnet_cli.tools.skillfire.candidates.fetch_skill_candidates",
+              return_value=("- Foo: x", {"Foo": _SKILL_INFO})),
+        patch("agentnet_cli.tools.skillfire.classifier.classify", return_value=(relevant, "claude")),
+        patch("agentnet_cli.tools.skillfire.broker.upgrade_outcome", return_value=""),
+        patch("agentnet_cli.tools.skillfire.config.resolve_credentials",
+              return_value=("t", "https://p")),
+        patch("agentnet_cli.marketplace.client.PlatformClient.report_skill_recommendation", report),
+    ):
+        worker.run_subagent("review my code", limit=5, timeout=30, classifier="claude")
+    report.assert_called_once()
