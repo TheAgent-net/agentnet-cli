@@ -62,6 +62,7 @@ Cursor             not found       -
 - [Configuration](#configuration)
 - [Local Files](#local-files)
 - [Architecture](#architecture)
+- [Glossary](#glossary)
 - [Development](#development)
 - [Release Process](#release-process)
 - [Related Repositories](#related-repositories)
@@ -308,6 +309,10 @@ Hermes / OpenClaw / Claude plugin flow
   -> calls AgentNet platform/catalog clients
   -> presents relevant agents, skills, and plugins
 ```
+
+## Glossary
+
+See [GLOSSARY.md](GLOSSARY.md) for the canonical vocabulary used across CLI docs, skills, MCP tool descriptions, UI copy, and connector comments.
 
 ## Development
 
