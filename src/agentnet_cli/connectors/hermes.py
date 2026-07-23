@@ -109,6 +109,11 @@ class HermesConnector(AgentConnector):
 
         config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
+        # Every-prompt skill-fire hooks (config.yaml `hooks:` + scoped consent allowlist).
+        from .hermes_hook import install as install_hooks
+
+        install_hooks()
+
         return ConnectionResult(
             success=True,
             files_created=files_created,
@@ -119,6 +124,10 @@ class HermesConnector(AgentConnector):
         )
 
     def disconnect(self, connection_manifest: dict[str, Any]) -> bool:
+        from .hermes_hook import uninstall as uninstall_hooks
+
+        uninstall_hooks()
+
         root = agent_config_root(AgentName.HERMES)
         config_path = root / "config.yaml"
 

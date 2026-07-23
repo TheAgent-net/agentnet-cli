@@ -305,3 +305,49 @@ def test_clean_update_refresh_only(mock_refresh):
 @patch("agentnet_cli.cli.core.updater._upgrade_command", return_value=["pipx", "upgrade", "agentnet-cli"])
 def test_detect_install_method_pipx(mock_cmd):
     assert detect_install_method() == "pipx"
+
+
+# ── run_update background path (the one maybe_auto_update / the worker uses) ──
+@patch("agentnet_cli.cli.core.updater.refresh_stale_connections", return_value=0)
+@patch("agentnet_cli.cli.core.updater.subprocess.Popen")
+@patch("agentnet_cli.cli.core.updater._upgrade_command",
+       return_value=["uv", "tool", "upgrade", "agentnet-cli"])
+@patch("agentnet_cli.cli.core.updater.check_pypi_latest", return_value="999.0.0")
+def test_run_update_background_spawns_installer_when_newer(
+    mock_pypi, mock_cmd, mock_popen, mock_refresh, fake_home, monkeypatch
+):
+    # Proves the update engine actually upgrades: newer version on PyPI -> self_upgrade spawns the
+    # detected installer in the background and the check is recorded (which drives the 24h gate).
+    monkeypatch.delenv("AGENTNET_AUTO_UPDATE", raising=False)  # default = enabled
+    from agentnet_cli.cli.core.updater import run_update
+    from agentnet_cli.infra.manifest import get_last_update_check_at
+
+    result = run_update(quiet=True, background=True, force=True)
+
+    assert result.upgrade_started is True
+    mock_popen.assert_called_once()
+    assert mock_popen.call_args.args[0] == ["uv", "tool", "upgrade", "agentnet-cli"]
+    assert get_last_update_check_at() is not None  # recorded -> rate-limit gate armed
+
+
+@patch("agentnet_cli.cli.core.updater.refresh_stale_connections", return_value=0)
+@patch("agentnet_cli.cli.core.updater.subprocess.Popen")
+@patch("agentnet_cli.cli.core.updater.check_pypi_latest", return_value="999.0.0")
+def test_run_update_disabled_never_upgrades(mock_pypi, mock_popen, mock_refresh, fake_home, monkeypatch):
+    monkeypatch.setenv("AGENTNET_AUTO_UPDATE", "0")
+    from agentnet_cli.cli.core.updater import run_update
+    result = run_update(quiet=True, background=True, force=True)
+    mock_popen.assert_not_called()  # gate off -> no installer spawned
+    assert result.upgrade_started is False
+
+
+@patch("agentnet_cli.cli.core.updater.refresh_stale_connections", return_value=0)
+@patch("agentnet_cli.cli.core.updater.check_pypi_latest")
+def test_run_update_skips_pypi_when_not_due(mock_pypi, mock_refresh, fake_home):
+    # The 24h rate-limit is what makes "run it on every hook trigger" cheap: not due -> no network.
+    from agentnet_cli.infra.manifest import record_update_check
+    from agentnet_cli.cli.core.updater import run_update
+    record_update_check()  # stamp "just now"
+    result = run_update(quiet=True, background=True, force=False)
+    mock_pypi.assert_not_called()
+    assert result.checked is False

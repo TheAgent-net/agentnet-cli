@@ -344,3 +344,25 @@ def test_hint_not_emitted_normally(fake_home, monkeypatch):
     result = runner.invoke(app, ["detect"])
     combined = result.output + (getattr(result, "stderr", "") or "")
     assert "<claude-code-hint" not in combined
+
+
+# ── auto-update: skipped on the critical-path hooks, kept for normal commands ──
+def test_callback_skips_auto_update_on_hook_commands(fake_home, monkeypatch):
+    # Hooks fire on the agent's critical path (prompt submit, each tool call, turn end), so the
+    # callback must not run the possibly-blocking auto-update for them. The detached worker does.
+    import sys as _sys
+
+    with patch("agentnet_cli.cli.core.updater.maybe_auto_update") as mau:
+        for argv in (["cursor-hook", "--peek"], ["skill-hook", "--post"], ["hermes-hook", "--pre"]):
+            monkeypatch.setattr(_sys, "argv", ["agentnet", *argv])
+            runner.invoke(app, argv, input="{}")
+        mau.assert_not_called()
+
+
+def test_callback_runs_auto_update_on_normal_command(fake_home, monkeypatch):
+    import sys as _sys
+
+    monkeypatch.setattr(_sys, "argv", ["agentnet", "status"])
+    with patch("agentnet_cli.cli.core.updater.maybe_auto_update") as mau:
+        runner.invoke(app, ["status"])
+        mau.assert_called_once()
