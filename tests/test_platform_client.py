@@ -1,25 +1,11 @@
-import httpx
 import json
+
+import httpx
 import pytest
 from agentnet_cli.marketplace.client import PlatformClient, PlatformError, _validate_path_segment
 
 
-@pytest.fixture()
-def mock_transport():
-    return httpx.MockTransport(lambda req: httpx.Response(200, json={"agents": []}))
-
-
-@pytest.fixture()
-def client(mock_transport):
-    return PlatformClient(
-        base_url="https://test.agentnet.market",
-        api_token="agn_test",
-        http_client=httpx.Client(transport=mock_transport),
-    )
-
-
 def _make_client(transport):
-    """Helper to build a PlatformClient with a given MockTransport."""
     return PlatformClient(
         base_url="https://test.agentnet.market",
         api_token="agn_test",
@@ -27,36 +13,56 @@ def _make_client(transport):
     )
 
 
-def test_discover(client):
-    result = client.discover(query="translation")
-    assert "agents" in result
-
-
 def test_search_endpoint():
     def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/discover/search"
+        assert req.url.path == "/discover/"
         assert req.url.params["q"] == "translation"
         assert req.url.params["type"] == "all"
         assert req.url.params["limit"] == "7"
-        return httpx.Response(200, json={"query": "translation", "sources": []})
+        assert req.url.params["harness"] == "claude"
+        assert req.url.params["session_id"] == "sess-1"
+        return httpx.Response(
+            200,
+            json={"query": "translation", "type": "all", "results": [{"id": "a1", "kind": "agent"}]},
+        )
 
     c = _make_client(httpx.MockTransport(handler))
-    result = c.search(query="translation", kind="all", limit=7)
+    result = c.search(
+        query="translation",
+        kind="all",
+        limit=7,
+        harness="claude",
+        session="sess-1",
+    )
     assert result["query"] == "translation"
+    assert result["results"][0]["id"] == "a1"
+
+
+def test_search_skills_kind():
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/discover/"
+        assert req.url.params["type"] == "skills"
+        return httpx.Response(
+            200,
+            json={
+                "query": "react",
+                "type": "skills",
+                "results": [{"name": "skill-a", "kind": "skill"}],
+            },
+        )
+
+    c = _make_client(httpx.MockTransport(handler))
+    result = c.search(query="react", kind="skills", limit=10)
+    assert [r["name"] for r in result["results"]] == ["skill-a"]
 
 
 def test_auth_header_sent():
     def check_auth(req: httpx.Request) -> httpx.Response:
         assert req.headers["authorization"] == "Bearer agn_test"
-        return httpx.Response(200, json={})
+        return httpx.Response(200, json={"query": "test", "type": "all", "results": []})
 
-    transport = httpx.MockTransport(check_auth)
-    c = PlatformClient(
-        base_url="https://test.agentnet.market",
-        api_token="agn_test",
-        http_client=httpx.Client(transport=transport),
-    )
-    c.discover(query="test")
+    c = _make_client(httpx.MockTransport(check_auth))
+    c.search(query="test")
 
 
 def test_send_telemetry_posts_best_effort_payload():
@@ -87,6 +93,22 @@ def test_send_telemetry_posts_best_effort_payload():
     }
 
 
+def test_send_telemetry_skips_without_token():
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req.url.path)
+        return httpx.Response(200, json={})
+
+    c = PlatformClient(
+        base_url="https://test.agentnet.market",
+        api_token="",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    c.send_telemetry(event_type="cli_setup")
+    assert seen == []
+
+
 def test_send_telemetry_ignores_transport_errors():
     def handler(req: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("offline", request=req)
@@ -95,7 +117,80 @@ def test_send_telemetry_ignores_transport_errors():
     c.send_telemetry(event_type="cli_setup")
 
 
-def test_report_skill_recommendation_posts_full_payload():
+def test_handle_response_401():
+    c = _make_client(
+        httpx.MockTransport(lambda req: httpx.Response(401, json={"detail": "unauthorized"}))
+    )
+    with pytest.raises(PlatformError, match="Authentication failed"):
+        c.search(query="test")
+
+
+def test_handle_response_429():
+    c = _make_client(
+        httpx.MockTransport(lambda req: httpx.Response(429, json={"detail": "too many"}))
+    )
+    with pytest.raises(PlatformError, match="Rate limited"):
+        c.search(query="test")
+
+
+def test_handle_response_500():
+    c = _make_client(
+        httpx.MockTransport(lambda req: httpx.Response(500, json={"detail": "internal"}))
+    )
+    with pytest.raises(PlatformError, match="Platform server error"):
+        c.search(query="test")
+
+
+def test_validate_path_segment_traversal():
+    with pytest.raises(PlatformError, match="Invalid identifier"):
+        _validate_path_segment("../admin")
+
+
+def test_get_agent_validates_id():
+    c = _make_client(httpx.MockTransport(lambda req: httpx.Response(200, json={})))
+    with pytest.raises(PlatformError, match="Invalid identifier"):
+        c.get_agent(agent_id="../admin")
+
+
+def test_get_skill():
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/discover/skills/org/react-testing"
+        return httpx.Response(200, json={"id": "org/react-testing"})
+
+    c = _make_client(httpx.MockTransport(handler))
+    result = c.get_skill(skill_id="skill:org/react-testing")
+    assert result["id"] == "org/react-testing"
+
+
+def test_get_skill_validates_id():
+    c = _make_client(httpx.MockTransport(lambda req: httpx.Response(200, json={})))
+    with pytest.raises(PlatformError, match="Invalid identifier"):
+        c.get_skill(skill_id="../admin")
+
+
+def test_context_manager():
+    transport = httpx.MockTransport(
+        lambda req: httpx.Response(200, json={"query": "test", "type": "all", "results": []})
+    )
+    with PlatformClient(
+        base_url="https://test.agentnet.market",
+        api_token="agn_test",
+        http_client=httpx.Client(transport=transport),
+    ) as c:
+        result = c.search(query="test")
+        assert result["results"] == []
+
+
+def test_user_agent_header():
+    def check_ua(req: httpx.Request) -> httpx.Response:
+        assert "agentnet-cli/" in req.headers["user-agent"]
+        return httpx.Response(200, json={"query": "test", "type": "all", "results": []})
+
+    c = _make_client(httpx.MockTransport(check_ua))
+    c.search(query="test")
+
+
+def test_send_skill_recommendation_posts_feedback():
     seen = {}
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -104,269 +199,26 @@ def test_report_skill_recommendation_posts_full_payload():
         return httpx.Response(204)
 
     c = _make_client(httpx.MockTransport(handler))
-    c.report_skill_recommendation(
-        use_case="containerize a fastapi app",
-        recommended=[{"name": "multi-stage-dockerfile", "score": 73, "why": "..."}],
-        harness="hermes",
-        session="s1",
-        classifier_model="provider/model",
-        model="provider/model",
+    c.send_skill_recommendation(
+        use_case="review sql",
+        recommended=[{"name": "Foo", "why": "helps", "score": "9"}],
+        harness="claude",
+        session="s9",
+        classifier_model="claude-haiku",
+        model=None,
     )
     assert seen["path"] == "/skills/discover/feedback"
     assert seen["body"] == {
-        "use_case": "containerize a fastapi app",
-        "recommended": [{"name": "multi-stage-dockerfile", "score": 73, "why": "..."}],
-        "harness": "hermes",
-        "session_id": "s1",
-        "classifier_model": "provider/model",
-        "model": "provider/model",
+        "use_case": "review sql",
+        "recommended": [{"name": "Foo", "why": "helps", "score": "9"}],
+        "harness": "claude",
+        "session_id": "s9",
+        "classifier_model": "claude-haiku",
     }
 
 
-def test_report_skill_recommendation_omits_absent_context():
-    seen = {}
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        seen["body"] = json.loads(req.content)
-        return httpx.Response(204)
-
-    c = _make_client(httpx.MockTransport(handler))
-    c.report_skill_recommendation(use_case="x", recommended=[])
-    assert seen["body"] == {"use_case": "x", "recommended": []}
-
-
-def test_report_skill_recommendation_survives_404_route_not_built_yet():
-    # The endpoint may not exist on the platform yet -- must never raise.
-    def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(404)
-
-    c = _make_client(httpx.MockTransport(handler))
-    c.report_skill_recommendation(use_case="x", recommended=[{"name": "a"}])  # no exception
-
-
-def test_report_skill_recommendation_ignores_transport_errors():
-    def handler(req: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("offline", request=req)
-
-    c = _make_client(httpx.MockTransport(handler))
-    c.report_skill_recommendation(use_case="x", recommended=[])
-
-
-# --- _handle_response error codes ---
-
-
-def test_handle_response_401():
-    transport = httpx.MockTransport(
-        lambda req: httpx.Response(401, json={"detail": "unauthorized"})
-    )
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Authentication failed"):
-        c.discover(query="test")
-
-
-def test_handle_response_403():
-    transport = httpx.MockTransport(
-        lambda req: httpx.Response(403, json={"detail": "forbidden"})
-    )
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Authentication failed"):
-        c.discover(query="test")
-
-
-def test_handle_response_429():
-    transport = httpx.MockTransport(
-        lambda req: httpx.Response(429, json={"detail": "too many requests"})
-    )
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Rate limited"):
-        c.discover(query="test")
-
-
-def test_handle_response_500():
-    transport = httpx.MockTransport(
-        lambda req: httpx.Response(500, json={"detail": "internal error"})
-    )
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Platform server error"):
-        c.discover(query="test")
-
-
-def test_handle_response_other_error():
-    transport = httpx.MockTransport(
-        lambda req: httpx.Response(418, json={"detail": "teapot"})
-    )
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match=r"Request failed \(418\)"):
-        c.discover(query="test")
-
-
-def test_handle_response_invalid_json():
-    transport = httpx.MockTransport(
-        lambda req: httpx.Response(
-            200, content=b"<html>error</html>", headers={"content-type": "text/html"}
-        )
-    )
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Invalid response from platform"):
-        c.discover(query="test")
-
-
-# --- _validate_path_segment ---
-
-
-def test_validate_path_segment_valid():
-    _validate_path_segment("agt_abc123")  # should not raise
-
-
-def test_validate_path_segment_traversal():
-    with pytest.raises(PlatformError, match="Invalid identifier"):
-        _validate_path_segment("../admin")
-
-
-def test_validate_path_segment_slash():
-    with pytest.raises(PlatformError, match="Invalid identifier"):
-        _validate_path_segment("foo/bar")
-
-
-def test_validate_path_segment_empty():
-    with pytest.raises(PlatformError, match="Invalid identifier"):
-        _validate_path_segment("")
-
-
-# --- validation integration ---
-
-
-def test_get_agent_validates_id():
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={}))
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Invalid identifier"):
-        c.get_agent(agent_id="../admin")
-
-
-# --- context manager & close ---
-
-
-def test_context_manager():
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"ok": True}))
-    with PlatformClient(
-        base_url="https://test.agentnet.market",
-        api_token="agn_test",
-        http_client=httpx.Client(transport=transport),
-    ) as c:
-        result = c.discover(query="test")
-        assert result == {"ok": True}
-
-
-def test_close_method():
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={}))
-    c = _make_client(transport)
-    c.close()  # should not crash
-
-
-# --- User-Agent header ---
-
-
-def test_user_agent_header():
-    def check_ua(req: httpx.Request) -> httpx.Response:
-        assert "agentnet-cli/" in req.headers["user-agent"]
-        return httpx.Response(200, json={})
-
-    transport = httpx.MockTransport(check_ua)
-    c = _make_client(transport)
-    c.discover(query="test")
-
-
-# --- endpoint verification for use_agent, continue_session, settle_session, get_skill, discover_agents ---
-
-
-def test_use_agent():
-    def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/agents/agt_1/use"
-        assert req.method == "POST"
-        import json
-        body = json.loads(req.content)
-        assert body["message"] == "translate hello"
-        assert body["amount"] == 5.0
-        return httpx.Response(200, json={"session_id": "s1"})
-
-    c = _make_client(httpx.MockTransport(handler))
-    result = c.use_agent(agent_id="agt_1", task="translate hello", max_amount=5.0)
-    assert result["session_id"] == "s1"
-
-
-def test_continue_session():
-    def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/agents/sessions/sess_abc/continue"
-        assert req.method == "POST"
-        return httpx.Response(200, json={"reply": "ok"})
-
-    c = _make_client(httpx.MockTransport(handler))
-    result = c.continue_session(session_id="sess_abc", message="hi")
-    assert result["reply"] == "ok"
-
-
-def test_settle_session():
-    def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/agents/sessions/sess_abc/settle"
-        assert req.method == "POST"
-        return httpx.Response(200, json={"settled": True})
-
-    c = _make_client(httpx.MockTransport(handler))
-    result = c.settle_session(session_id="sess_abc")
-    assert result["settled"] is True
-
-
-def test_get_skill():
-    def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/discover/skills/org/react-testing"
-        assert req.method == "GET"
-        return httpx.Response(200, json={"id": "org/react-testing", "content": "..."})
-
-    c = _make_client(httpx.MockTransport(handler))
-    result = c.get_skill(skill_id="skill:org/react-testing")
-    assert result["id"] == "org/react-testing"
-
-
-def test_get_skill_strips_bare_id():
-    def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/discover/skills/org/react-testing"
-        return httpx.Response(200, json={"id": "org/react-testing"})
-
-    c = _make_client(httpx.MockTransport(handler))
-    c.get_skill(skill_id="org/react-testing")
-
-
-def test_get_skill_validates_id():
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={}))
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Invalid identifier"):
-        c.get_skill(skill_id="../admin")
-
-
-@pytest.mark.parametrize(
-    "skill_id",
-    [
-        "skill:/org/react-testing",
-        "skill:org//react-testing",
-        "skill:./org/react-testing",
-        "skill:org/react-testing/",
-        "skill:org/./react-testing",
-        "skill:org/../react-testing",
-    ],
-)
-def test_get_skill_rejects_ambiguous_path_segments(skill_id):
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, json={}))
-    c = _make_client(transport)
-    with pytest.raises(PlatformError, match="Invalid identifier"):
-        c.get_skill(skill_id=skill_id)
-
-
-def test_discover_agents():
-    def handler(req: httpx.Request) -> httpx.Response:
-        assert req.url.path == "/discover/"
-        assert "q=weather" in str(req.url)
-        return httpx.Response(200, json={"agents": ["a1"]})
-
-    c = _make_client(httpx.MockTransport(handler))
-    result = c.discover_agents(query="weather", limit=10)
-    assert result["agents"] == ["a1"]
+def test_no_use_agent_method():
+    c = _make_client(httpx.MockTransport(lambda req: httpx.Response(200, json={})))
+    assert not hasattr(c, "use_agent")
+    assert not hasattr(c, "find_agents")
+    assert not hasattr(c, "find_skills")

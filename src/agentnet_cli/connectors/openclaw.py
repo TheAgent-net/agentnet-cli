@@ -1,24 +1,23 @@
+"""OpenClaw connector for plugin install and MCP server registration."""
+
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from typing import Any
 
 from ..infra.package_paths import bundled_openclaw_plugin
 from ..infra.paths import AgentName, agent_config_root, agentnet_home
+from ..infra.proc import find_executable, run_tool
 from .base import AgentConnector, ConnectionResult, DetectionResult
+from .mcp_entry import make_mcp_server_entry
 
 _PLUGIN_ID = "agentnet"
 _MCP_SERVER_NAME = "agentnet"
-
-def _mcp_server_config() -> str:
-    agentnet_bin = shutil.which("agentnet")
-    if agentnet_bin:
-        return json.dumps({"command": agentnet_bin, "args": ["mcp-serve"]})
-    return json.dumps({"command": "uvx", "args": ["agentnet-cli", "mcp-serve"]})
-
 _SUBPROCESS_TIMEOUT = 120
+
+
+def _mcp_server_config(env) -> str:
+    return json.dumps(make_mcp_server_entry(env))
 
 
 def _plugin_source() -> str:
@@ -33,17 +32,46 @@ def _plugin_source() -> str:
 
 
 class OpenClawConnector(AgentConnector):
+    """Connect OpenClaw through plugin install and MCP server registration."""
+
     def detect(self) -> DetectionResult:
-        root = agent_config_root(AgentName.OPENCLAW)
+        """Detect OpenClaw config in this environment."""
+        root = agent_config_root(AgentName.OPENCLAW, self.env)
         if not root.exists():
-            return DetectionResult(agent_name=AgentName.OPENCLAW, detected=False)
+            return DetectionResult(
+                agent_name=AgentName.OPENCLAW,
+                detected=False,
+                env_key=self.env.key,
+                env_label=self.env.label,
+            )
         if (root / "openclaw.json").exists():
-            return DetectionResult(agent_name=AgentName.OPENCLAW, detected=True, config_root=root)
-        return DetectionResult(agent_name=AgentName.OPENCLAW, detected=False)
+            return DetectionResult(
+                agent_name=AgentName.OPENCLAW,
+                detected=True,
+                config_root=root,
+                env_key=self.env.key,
+                env_label=self.env.label,
+            )
+        return DetectionResult(
+            agent_name=AgentName.OPENCLAW,
+            detected=False,
+            env_key=self.env.key,
+            env_label=self.env.label,
+        )
 
     def connect(self, platform_config: dict[str, Any]) -> ConnectionResult:
-        openclaw_bin = shutil.which("openclaw")
-        if not openclaw_bin:
+        """Install the AgentNet plugin and register the MCP server."""
+        # Plugin install subprocess is local-only; mirrored envs get file-level detect only.
+        if self.env.kind != "local":
+            return ConnectionResult(
+                success=False,
+                errors=[
+                    f"OpenClaw plugin install skipped for {self.env.label} "
+                    "(run connect on that side)"
+                ],
+            )
+
+        if not find_executable("openclaw"):
             return ConnectionResult(
                 success=False,
                 errors=["OpenClaw not found. Install it from https://docs.openclaw.ai"],
@@ -51,22 +79,30 @@ class OpenClawConnector(AgentConnector):
 
         plugin_source = _plugin_source()
 
-        proc = subprocess.run(
-            ["openclaw", "plugins", "install", plugin_source, "--force"],
-            capture_output=True,
+        proc = run_tool(
+            "openclaw",
+            ["plugins", "install", plugin_source, "--force"],
             timeout=_SUBPROCESS_TIMEOUT,
         )
-        if proc.returncode != 0:
-            msg = proc.stderr.decode(errors="replace").strip()
+        if proc is None or proc.returncode != 0:
+            msg = (
+                proc.stderr.decode(errors="replace").strip()
+                if proc is not None
+                else "openclaw not found"
+            )
             return ConnectionResult(success=False, errors=[f"plugin install failed: {msg}"])
 
-        proc = subprocess.run(
-            ["openclaw", "mcp", "set", _MCP_SERVER_NAME, _mcp_server_config()],
-            capture_output=True,
+        proc = run_tool(
+            "openclaw",
+            ["mcp", "set", _MCP_SERVER_NAME, _mcp_server_config(self.env)],
             timeout=_SUBPROCESS_TIMEOUT,
         )
-        if proc.returncode != 0:
-            msg = proc.stderr.decode(errors="replace").strip()
+        if proc is None or proc.returncode != 0:
+            msg = (
+                proc.stderr.decode(errors="replace").strip()
+                if proc is not None
+                else "openclaw not found"
+            )
             return ConnectionResult(success=False, errors=[f"mcp set failed: {msg}"])
 
         self._cleanup_legacy()
@@ -77,33 +113,32 @@ class OpenClawConnector(AgentConnector):
         )
 
     def disconnect(self, connection_manifest: dict[str, Any]) -> bool:
-        openclaw_bin = shutil.which("openclaw")
-        if not openclaw_bin:
-            return True
-
-        subprocess.run(
-            ["openclaw", "mcp", "unset", _MCP_SERVER_NAME],
-            capture_output=True,
-            timeout=_SUBPROCESS_TIMEOUT,
-        )
-        subprocess.run(
-            ["openclaw", "plugins", "uninstall", _PLUGIN_ID, "--force"],
-            capture_output=True,
-            timeout=_SUBPROCESS_TIMEOUT,
-        )
+        """Remove the MCP server and uninstall the AgentNet plugin."""
+        if self.env.kind == "local":
+            run_tool(
+                "openclaw",
+                ["mcp", "unset", _MCP_SERVER_NAME],
+                timeout=_SUBPROCESS_TIMEOUT,
+            )
+            run_tool(
+                "openclaw",
+                ["plugins", "uninstall", _PLUGIN_ID, "--force"],
+                timeout=_SUBPROCESS_TIMEOUT,
+            )
         return True
 
-    @staticmethod
-    def _cleanup_legacy() -> None:
-        root = agent_config_root(AgentName.OPENCLAW)
+    def _cleanup_legacy(self) -> None:
+        root = agent_config_root(AgentName.OPENCLAW, self.env)
 
         config_path = root / "openclaw.json"
         if config_path.exists():
             try:
-                data = json.loads(config_path.read_text())
+                data = json.loads(config_path.read_text(encoding="utf-8"))
                 if "agentnet-gateway" in data.get("plugins", {}):
                     data["plugins"].pop("agentnet-gateway")
-                    config_path.write_text(json.dumps(data, indent=2) + "\n")
+                    config_path.write_text(
+                        json.dumps(data, indent=2) + "\n", encoding="utf-8"
+                    )
             except (json.JSONDecodeError, OSError):
                 pass
 

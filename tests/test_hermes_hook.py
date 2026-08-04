@@ -12,8 +12,8 @@ from agentnet_cli.tools import hermes_hook, skillfire
 runner = CliRunner()
 _ENV = skillfire.SUBAGENT_ENV
 _CACHE = "agentnet_cli.tools.skillfire.session.cache_path"
-_POPEN = "agentnet_cli.tools.skillfire.worker.subprocess.Popen"
-_WHICH = "agentnet_cli.tools.skillfire.worker.shutil.which"
+_POPEN = "agentnet_cli.tools.skillfire.worker.start_detached_process"
+_WHICH = "agentnet_cli.tools.skillfire.worker.agentnet_invocation"
 
 
 def _cache(outcome, final=True):
@@ -35,7 +35,7 @@ def _payload(**kw):
 def test_hermes_pre_spawns_worker(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv(_ENV, raising=False)
     monkeypatch.setattr(_CACHE, lambda s: tmp_path / "s.json")
-    monkeypatch.setattr(_WHICH, lambda n: "/usr/bin/agentnet")
+    monkeypatch.setattr(_WHICH, lambda: ["/usr/bin/agentnet"])
     captured = {}
     monkeypatch.setattr(_POPEN, lambda args, **kw: captured.setdefault("args", args) or MagicMock())
     _stdin(monkeypatch, _payload(extra={"user_message": "add jwt auth to my api"}))
@@ -71,7 +71,7 @@ def test_hermes_pre_skips_own_continuation(monkeypatch, capsys):
 def test_hermes_pre_spawns_once_across_duplicates(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv(_ENV, raising=False)
     monkeypatch.setattr(_CACHE, lambda s: tmp_path / "s.json")
-    monkeypatch.setattr(_WHICH, lambda n: "/usr/bin/agentnet")
+    monkeypatch.setattr(_WHICH, lambda: ["/usr/bin/agentnet"])
     spawns = []
     monkeypatch.setattr(_POPEN, lambda args, **kw: spawns.append(args) or MagicMock())
     for _ in range(2):
@@ -184,8 +184,8 @@ def test_cli_hermes_hook_peek(tmp_path, monkeypatch):
 
 # ── connector: config.yaml hooks block + consent allowlist ───────────────────
 def _patch_paths(monkeypatch, tmp_path):
-    monkeypatch.setattr(conn, "_config_path", lambda: tmp_path / "config.yaml")
-    monkeypatch.setattr(conn, "_allowlist_path", lambda: tmp_path / "shell-hooks-allowlist.json")
+    monkeypatch.setattr(conn, "_config_path", lambda *a, **k: tmp_path / "config.yaml")
+    monkeypatch.setattr(conn, "_allowlist_path", lambda *a, **k: tmp_path / "shell-hooks-allowlist.json")
 
 
 def test_connector_install_idempotent_then_uninstall(tmp_path, monkeypatch):

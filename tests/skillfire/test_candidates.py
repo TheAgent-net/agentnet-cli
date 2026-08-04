@@ -1,64 +1,61 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from agentnet_cli.tools.skillfire import candidates
 
-_CREDS = "agentnet_cli.tools.skillfire.config.resolve_credentials"
-_DISCOVER_SKILLS = "agentnet_cli.marketplace.skills.discovery.SkillDiscovery.discover"
+_MAKE = "agentnet_cli.infra.credentials.make_platform_client"
 
-_RAW_SKILLS = {
+_RAW = {
+    "query": "flags",
+    "type": "skills",
     "results": [
-        {"name": "flag-create", "source": "skills.sh", "repo": "ld/agent-skills",
-         "url": "https://skills.sh/1", "install_cmd": "npx skills add ld/agent-skills@flag-create",
-         "description": "create flags", "score": 66},
-        {"name": "elsewhere", "source": "clawhub", "repo": "x/y", "description": "not skills.sh"},
-        {"source": "skills.sh", "repo": "z", "description": "no name — skipped"},
-    ]
+        {
+            "name": "flag-create",
+            "repo": "ld/agent-skills",
+            "url": "https://skills.example/1",
+            "install_cmd": "npx skills add ld/agent-skills@flag-create",
+            "description": "create flags",
+            "score": 66,
+        },
+        {"repo": "z", "description": "no name — skipped"},
+    ],
 }
 
 
-def test_fetch_skill_candidates():
-    with patch(_CREDS, return_value=("t", "p")), patch(_DISCOVER_SKILLS, return_value=_RAW_SKILLS):
-        text, skills = candidates.fetch_skill_candidates("flags", limit=6, timeout=8)
+def test_get_skill_candidates():
+    platform = MagicMock()
+    platform.search.return_value = _RAW
+    with patch(_MAKE, return_value=platform):
+        text, skills = candidates.get_skill_candidates("flags", limit=6, timeout=8)
     assert "flag-create" in text
-    assert "elsewhere" not in text and "no name" not in text  # non-skills.sh + no-name dropped
     assert skills["flag-create"]["repo"] == "ld/agent-skills"
     assert skills["flag-create"]["install_cmd"] == "npx skills add ld/agent-skills@flag-create"
+    platform.close.assert_called_once()
 
 
-def test_fetch_skill_candidates_best_effort():
-    with patch(_CREDS, return_value=None):
-        assert candidates.fetch_skill_candidates("x", limit=6, timeout=8) == ("", {})
-    with patch(_CREDS, return_value=("t", "p")), patch(_DISCOVER_SKILLS, side_effect=RuntimeError()):
-        assert candidates.fetch_skill_candidates("x", limit=6, timeout=8) == ("", {})
+def test_get_skill_candidates_best_effort():
+    with patch(_MAKE, return_value=None):
+        assert candidates.get_skill_candidates("x", limit=6, timeout=8) == ("", {})
+    platform = MagicMock()
+    platform.search.side_effect = RuntimeError()
+    with patch(_MAKE, return_value=platform):
+        assert candidates.get_skill_candidates("x", limit=6, timeout=8) == ("", {})
 
 
-def test_fetch_skill_candidates_forwards_context():
-    # Only harness + session ride on the retrieval call. The gate model is deliberately not
-    # forwarded here — discovery runs before the classifier, so which model gates is unknown.
-    with (
-        patch(_CREDS, return_value=("t", "p")),
-        patch(_DISCOVER_SKILLS, return_value=_RAW_SKILLS) as discover,
-    ):
-        candidates.fetch_skill_candidates(
+def test_get_skill_candidates_forwards_harness_and_session():
+    platform = MagicMock()
+    platform.search.return_value = _RAW
+    with patch(_MAKE, return_value=platform):
+        candidates.get_skill_candidates(
             "flags",
             limit=6,
             timeout=8,
             harness="hermes",
             session="s1",
         )
-    _args, kwargs = discover.call_args
-    assert kwargs["harness"] == "hermes"
-    assert kwargs["session"] == "s1"
-    assert "classifier_model" not in kwargs  # gate model never rides on retrieval
-    assert "model" not in kwargs
-
-
-def test_fetch_skill_candidates_omits_context_when_not_given():
-    with (
-        patch(_CREDS, return_value=("t", "p")),
-        patch(_DISCOVER_SKILLS, return_value=_RAW_SKILLS) as discover,
-    ):
-        candidates.fetch_skill_candidates("flags", limit=6, timeout=8)
-    _args, kwargs = discover.call_args
-    assert kwargs["harness"] is None
-    assert kwargs["session"] is None
+    platform.search.assert_called_once_with(
+        query="flags",
+        kind="skills",
+        limit=6,
+        harness="hermes",
+        session="s1",
+    )

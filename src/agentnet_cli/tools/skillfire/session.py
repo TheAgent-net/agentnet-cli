@@ -1,8 +1,7 @@
-"""Hook event parsing, session-keyed cache, and atomic once-claim primitives.
+"""Hook event parsing, session cache, and atomic once-claim primitives.
 
-Shared by every adapter (Claude/Cursor/Hermes) and the detached worker. The cache is the only
-state shared across a session's pre/peek/post calls, keyed by session id since non-prompt events
-(PostToolUse, Stop) carry no prompt.
+Shared by every adapter and the detached worker. The cache is keyed by session id because
+non-prompt events carry no prompt.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from typing import Any
 
 
 def read_event() -> dict[str, Any] | None:
-    """Read the hook event JSON from stdin (None on any error)."""
+    """Read the hook event JSON from stdin. Return ``None`` on error."""
     try:
         event = json.loads(sys.stdin.read())
     except Exception:  # noqa: BLE001
@@ -26,23 +25,23 @@ def read_event() -> dict[str, Any] | None:
 
 
 def prompt_from_event(event: dict[str, Any]) -> str:
-    """The user's text from a UserPromptSubmit event."""
+    """Return the user text from a UserPromptSubmit event."""
     prompt = event.get("prompt")
     return prompt.strip() if isinstance(prompt, str) and prompt.strip() else ""
 
 
 def cache_path(session_id: str) -> Path:
-    """Session-keyed cache shared by the worker and the hooks.
+    """Return the session-keyed cache path shared by the worker and hooks.
 
-    Non-prompt events (PostToolUse, Stop) carry no prompt, so all three can only agree on the
-    session. Prompts are sequential per session, so the session cache holds the current
-    prompt's outcome. Stored as ``{"outcome": <text>, "final": <bool>}``.
+    Non-prompt events carry no prompt, so all three agree on the session. Prompts are sequential
+    per session. The cache holds ``{"outcome": <text>, "final": <bool>}``.
     """
     key = hashlib.sha1((session_id or "default").encode()).hexdigest()[:16]
     return Path(tempfile.gettempdir()) / "agentnet-skill" / f"{key}.json"
 
 
 def cache_read(path: Path) -> dict[str, Any] | None:
+    """Read one cache file. Return ``None`` on error."""
     try:
         data = json.loads(path.read_text())
     except Exception:  # noqa: BLE001
@@ -51,11 +50,10 @@ def cache_read(path: Path) -> dict[str, Any] | None:
 
 
 def cache_write(path: Path, outcome: str, *, final: bool = True) -> None:
-    """Cache the outcome. ``final`` marks it **actionable** (the agent has something to apply).
+    """Write the outcome to the cache. ``final`` marks it actionable for steering.
 
-    Phase 1 caches the recommendation list with ``final=False``: it names skills but carries no
-    methodology, so steering on it hands the agent nothing to do. Phase 2 re-writes with
-    ``final=True`` once the SKILL.md content is attached (or once we know none is coming).
+    Phase 1 caches the recommendation list with ``final=False``. Phase 2 rewrites with
+    ``final=True`` once SKILL.md content is attached or known to be missing.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -67,12 +65,10 @@ def cache_write(path: Path, outcome: str, *, final: bool = True) -> None:
 
 
 def claim(marker: Path) -> bool:
-    """Atomically create ``marker``; return True only for the caller that created it.
+    """Create ``marker`` once. Return True only for the caller that created it.
 
-    The hooks are registered in both ``settings.json`` and the plugin's ``hooks.json``, so Claude
-    Code may run each event's hook twice in parallel. An ``O_EXCL`` create is the atomic
-    once-primitive: exactly one of N concurrent callers wins, the rest see the file exists. Used to
-    steer once (peek/post) and spawn one worker (pre) regardless of how many copies fire.
+    Hooks may run twice in parallel when registered in more than one config file. ``O_EXCL``
+    create is the once-primitive: one caller wins, the rest see the file exists.
     """
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
@@ -86,23 +82,19 @@ def claim(marker: Path) -> bool:
 
 
 def emit_marker(cache: Path) -> Path:
-    """Once-per-prompt steer claim (shared by peek + post); cleared by the next ``--pre``."""
+    """Return the once-per-prompt steer claim path. Cleared by the next ``--pre``."""
     return cache.with_suffix(".emitted")
 
 
 def spawn_marker(session: str, prompt: str) -> Path:
-    """Once-per-(session, prompt) worker-spawn claim, so duplicate ``--pre`` hooks spawn one worker.
-
-    Keyed by the prompt hash — the only thing both parallel ``--pre`` invocations share — so a new
-    prompt naturally gets a fresh claim without a reset race.
-    """
+    """Return the once-per-(session, prompt) worker-spawn claim path."""
     cache = cache_path(session)
     h = hashlib.sha1(prompt.encode()).hexdigest()[:16]
     return cache.parent / f"{cache.stem}.{h}.spawn"
 
 
 def clear_stale(session: str) -> None:
-    """Drop the previous prompt's outcome + its steer claim so a new prompt starts fresh."""
+    """Remove the previous prompt outcome and steer claim."""
     cache = cache_path(session)
     for stale in (cache, emit_marker(cache)):
         try:

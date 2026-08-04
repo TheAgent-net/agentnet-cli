@@ -50,7 +50,7 @@ Cursor             not found       -
 
 ### Highlights
 
-- **One-command setup**: browser sign-in, CLI identity registration, agent detection, and guided configuration.
+- **One-command setup**: detect and wire all local agents first (hooks work immediately), then optional browser sign-in for higher rate limits and a marketplace identity.
 - **Broad agent support**: Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, and OpenClaw.
 - **Marketplace discovery**: JSON-first commands and MCP tools for listings, agents, skills, and plugins.
 - **Skill-fire hooks**: surface relevant AgentNet skills during Claude Code, Cursor, and Hermes prompt flows.
@@ -60,6 +60,8 @@ Cursor             not found       -
 ## Table Of Contents
 
 - [Install](#install)
+  - [Windows (PowerShell)](#windows-powershell)
+  - [WSL and Windows](#wsl-and-windows)
 - [Quick Start](#quick-start)
 - [Supported Agents](#supported-agents)
 - [Skill-Fire](#skill-fire)
@@ -94,6 +96,44 @@ cd agentnet-cli
 uv sync
 ```
 
+### Windows (PowerShell)
+
+Recommended (isolated tool install via [uv](https://docs.astral.sh/uv/)):
+
+```powershell
+# Install uv if needed: https://docs.astral.sh/uv/getting-started/installation/
+uv tool install agentnet-cli
+agentnet --version
+```
+
+Alternates:
+
+```powershell
+pipx install agentnet-cli
+# or
+pip install agentnet-cli
+# or (TypeScript rewrite)
+npm install -g agentnet-cli
+```
+
+### WSL and Windows
+
+When you install AgentNet inside WSL (or on native Windows with WSL available), `detect` / `connect` / `setup` automatically discover the other side and can configure agents there too:
+
+- From **WSL**: probes `%USERPROFILE%` and writes Cursor/Claude/etc. configs under `/mnt/c/Users/...`, with hook/MCP commands bridged via `wsl.exe` (or a native Windows `agentnet` if present on PATH).
+- From **Windows**: enumerates the default WSL distro and can write into `\\wsl$\Distro\home\...`.
+
+Scope or disable mirroring:
+
+```bash
+agentnet detect --env local
+agentnet connect --all --env windows
+agentnet setup --no-mirror
+# or: AGENTNET_NO_MIRROR=1 agentnet detect
+```
+
+Manifest keys stay bare (`cursor`) for the local side and use `cursor@windows` / `cursor@wsl:Ubuntu` for mirrored environments.
+
 Verify the install:
 
 ```bash
@@ -123,7 +163,7 @@ agentnet disconnect --all
 agentnet status
 ```
 
-`agentnet setup` opens Agent-net sign-in/sign-up in your browser. After login, the CLI stores credentials locally, creates a private AgentNet CLI identity, detects local agents, and configures every detected agent by default.
+`agentnet setup` detects local agents and configures every detected agent by default (hooks and MCP work without a token — the platform applies anonymous rate limits). It then optionally opens browser sign-in so you can raise those limits and create a private AgentNet CLI identity.
 
 ## Supported Agents
 
@@ -160,7 +200,7 @@ Current skill-fire coverage:
 
 | Command | Description |
 | --- | --- |
-| `agentnet setup [--choose] [--url URL]` | Sign in and configure detected agents; use `--choose` for an interactive selection |
+| `agentnet setup [--choose] [--url URL]` | Configure detected agents, then optionally sign in; use `--choose` for interactive selection |
 | `agentnet detect` | Scan the system for supported AI coding agents |
 | `agentnet register` | Sign in through the browser and register a CLI identity |
 | `agentnet connect [agent]` | Wire one agent into AgentNet |
@@ -196,27 +236,11 @@ agentnet agent skill:org/weather-forecast
 
 `agentnet mcp-serve` starts the internal MCP stdio server. Connected agents launch it as a subprocess and receive marketplace tools.
 
-Call `agentnet_search` first for the best cross-catalog result set.
+Call `agentnet_search` first. All tools hit the Agent-net platform only (no third-party catalogs).
 
 | Tool | Description |
 | --- | --- |
-| `agentnet_search` | Canonical unified search across listings, agents, skills, and plugins |
-| `agentnet_discover` | Search marketplace listings |
-| `agentnet_discover_agents` | Search agents by name or capability |
-| `agentnet_get_agent` | Fetch full details for an agent or skill |
-| `agentnet_discover_skills` | AI-ranked skill/plugin discovery by use case |
-| `agentnet_search_skills` | Search skills.sh |
-| `agentnet_search_skillsmp` | Search SkillsMP |
-| `agentnet_search_claude_plugins` | Search the Claude Code plugin catalog |
-| `agentnet_search_clawhub` | Search ClawHub / OpenClaw |
-
-For a smaller tool surface:
-
-```bash
-export AGENTNET_MCP_TOOLS=core
-```
-
-That registers only `agentnet_search`, `agentnet_discover`, `agentnet_discover_agents`, and `agentnet_get_agent`.
+| `agentnet_search` | Search Agent-net for agents, skills, plugins, and listings |
 
 ## Updating
 
@@ -288,7 +312,7 @@ src/agentnet_cli/
   connectors/      # Per-agent detection, connect/disconnect logic, templates
   integrations/    # Shipped Claude/OpenClaw/Hermes plugin assets
   infra/           # Config, paths, manifests, platform URL resolution
-  marketplace/     # Platform API client, catalogs, skill discovery clients
+  marketplace/     # Platform API client (PlatformClient) and auth helpers
   tools/           # MCP server, hook entry points, skill-fire runtime
 ```
 
@@ -297,8 +321,8 @@ Most agents use MCP:
 ```text
 Your Agent
   -> launches `agentnet mcp-serve`
-  -> calls AgentNet MCP tools
-  -> receives marketplace search results
+  -> calls agentnet_search
+  -> receives Agent-net search results
 ```
 
 Native-plugin agents use bundled integration trees:
@@ -306,7 +330,7 @@ Native-plugin agents use bundled integration trees:
 ```text
 Hermes / OpenClaw / Claude plugin flow
   -> loads AgentNet plugin or hook assets
-  -> calls AgentNet platform/catalog clients
+  -> calls GET /discover/ through PlatformClient
   -> presents relevant agents, skills, and plugins
 ```
 

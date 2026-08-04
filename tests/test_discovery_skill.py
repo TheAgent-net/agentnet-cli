@@ -8,7 +8,7 @@ DISCOVERY_BASE = PKG_ROOT / "integrations" / "shared" / "discovery-skill.base.md
 CONTEXT = REPO_ROOT / "src" / "agentnet_cli" / "connectors" / "templates" / "shared" / "context.md"
 
 REQUIRED_PHRASES = (
-    "agentnet_discover_agents",
+    "agentnet_search",
 )
 
 FORBIDDEN_PHRASES = (
@@ -24,10 +24,10 @@ FORBIDDEN_PHRASES = (
 SYNC_TARGETS = (
     CONTEXT,
     PKG_ROOT / "integrations" / "claude" / "plugin" / "skills" / "agentnet" / "SKILL.md",
-    PKG_ROOT / "integrations" / "openclaw" / "skills" / "agentnet" / "SKILL.md",
-    REPO_ROOT / "src" / "agentnet_cli" / "tools" / "hermes" / "skills" / "agentnet" / "SKILL.md",
+    PKG_ROOT / "integrations" / "hermes" / "skills" / "agentnet" / "SKILL.md",
     PKG_ROOT / "integrations" / "claude" / "plugin" / "agents" / "marketplace.md",
 )
+
 
 CURSOR_RULE = (
     REPO_ROOT / "src" / "agentnet_cli" / "connectors" / "templates" / "cursor" / "agentnet.mdc"
@@ -70,8 +70,8 @@ def test_cursor_rule_defers_to_the_hook():
         "rule must forbid installing skills — agents ran the install command when given one"
     )
     assert "skill.md" in lowered, "rule must tell the agent to read the on-disk SKILL.md"
-    assert "do not" in lowered and "agentnet_discover_agents" in lowered, (
-        "rule must explicitly forbid proactively calling the discovery tools"
+    assert "do not" in lowered and "proactively" in lowered and "agentnet_search" in lowered, (
+        "rule must explicitly forbid proactively calling agentnet_search"
     )
 
 
@@ -99,12 +99,12 @@ def test_discovery_base_matches_context():
 
 
 def test_mcp_search_tool_is_first():
-    from agentnet_cli.tools.mcp_server import TOOL_DEFINITIONS
+    from agentnet_cli.tools.tool_defs import TOOL_SPECS
 
-    assert TOOL_DEFINITIONS[0]["name"] == "agentnet_search"
+    assert TOOL_SPECS[0]["name"] == "agentnet_search"
 
 
 def test_hermes_search_tool_is_first():
-    from agentnet_cli.tools.hermes.schemas import SCHEMAS
+    from agentnet_cli.integrations.hermes.schemas import SCHEMAS
 
     assert SCHEMAS[0]["name"] == "agentnet_search"

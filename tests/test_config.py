@@ -18,10 +18,14 @@ def test_load_returns_none_when_missing(fake_home):
 
 
 def test_config_file_has_restricted_permissions(fake_home):
+    import os
     import stat
     save_config({"api_token": "secret"})
     from agentnet_cli.infra.paths import agentnet_home
     config_path = agentnet_home() / "config.json"
+    if os.name == "nt":
+        assert config_path.exists()
+        return
     mode = config_path.stat().st_mode
     assert not (mode & stat.S_IROTH)
     assert not (mode & stat.S_IWOTH)
@@ -57,7 +61,7 @@ def test_load_corrupted_config(fake_home):
     assert load_config() is None
 
 
-def test_atomic_write_creates_dirs(fake_home):
+def test_write_file_safe_creates_dirs(fake_home):
     """save_config creates parent dirs when they don't exist."""
     from agentnet_cli.infra.paths import agentnet_home
 
@@ -69,7 +73,7 @@ def test_atomic_write_creates_dirs(fake_home):
     assert load_config() == {"api_token": "x"}
 
 
-def test_atomic_write_restricted_permissions(fake_home):
+def test_write_file_safe_restricted_permissions(fake_home):
     """Config file gets 0600 permissions (owner read/write only)."""
     import os
     import stat as stat_mod

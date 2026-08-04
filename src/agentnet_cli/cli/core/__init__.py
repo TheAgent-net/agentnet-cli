@@ -1,1 +1,1 @@
-"""Core CLI commands: setup, connect, detect, register, status."""
+"""Core CLI commands for setup, connect, detect, register, and status."""

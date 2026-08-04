@@ -11,7 +11,7 @@ def agent(
         help="Agent or skill ID from discover results (skill IDs are prefixed skill:)",
     ),
 ) -> None:
-    """Get full details about an agent or a community skill's full content."""
+    """Get full details for an agent or community skill."""
     client = get_client()
     try:
         if agent_id.startswith("skill:"):

@@ -1,3 +1,8 @@
+"""HTTP client for the Agent-net platform.
+
+This is the only module that sends Agent-net API requests.
+"""
+
 from __future__ import annotations
 
 import re
@@ -7,7 +12,7 @@ import httpx
 
 
 class PlatformError(Exception):
-    pass
+    """Raised when a platform API request fails."""
 
 
 def _validate_path_segment(value: str) -> None:
@@ -17,7 +22,7 @@ def _validate_path_segment(value: str) -> None:
 
 
 def _validate_skill_path(value: str) -> None:
-    """Reject skill IDs with leading/trailing/empty/dot path segments."""
+    """Reject skill IDs with bad path segments."""
     segments = value.split("/")
     if not value or value.startswith("/") or value.endswith("/"):
         raise PlatformError(f"Invalid identifier: {value!r}")
@@ -27,6 +32,8 @@ def _validate_skill_path(value: str) -> None:
 
 
 class PlatformClient:
+    """Send requests to the Agent-net platform."""
+
     def __init__(
         self,
         *,
@@ -38,30 +45,36 @@ class PlatformClient:
         self._token = api_token
         self._http = http_client or httpx.Client(timeout=30.0)
 
-    # -- context manager & cleanup (L-4) --
-
     def close(self) -> None:
+        """Close the HTTP client."""
         self._http.close()
 
-    def __enter__(self) -> "PlatformClient":
+    def __enter__(self) -> PlatformClient:
         return self
 
     def __exit__(self, *args: Any) -> None:
         self.close()
 
-    # -- internal helpers --
-
     def _headers(self) -> dict[str, str]:
         from agentnet_cli import __version__  # noqa: PLC0415
 
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": f"agentnet-cli/{__version__}",
+        }
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        return headers
+
+    def _public_headers(self) -> dict[str, str]:
+        from agentnet_cli import __version__  # noqa: PLC0415
+
         return {
-            "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
             "User-Agent": f"agentnet-cli/{__version__}",
         }
 
-    def _handle_response(self, resp: httpx.Response) -> dict[str, Any]:
-        """Raise PlatformError on HTTP errors; safely parse JSON (H-11)."""
+    def _handle_response(self, resp: httpx.Response) -> Any:
         try:
             resp.raise_for_status()
         except httpx.HTTPStatusError:
@@ -73,28 +86,22 @@ class PlatformClient:
             if 500 <= status < 600:
                 raise PlatformError("Platform server error") from None
             raise PlatformError(f"Request failed ({status})") from None
+        if resp.status_code == 204 or not resp.content:
+            return {}
         try:
             return resp.json()
         except ValueError:
             raise PlatformError("Invalid response from platform") from None
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         resp = self._http.get(f"{self._base}{path}", headers=self._headers(), params=params)
         return self._handle_response(resp)
 
-    def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    def _post(self, path: str, body: dict[str, Any]) -> Any:
         resp = self._http.post(f"{self._base}{path}", headers=self._headers(), json=body)
         return self._handle_response(resp)
 
-    def _public_headers(self) -> dict[str, str]:
-        from agentnet_cli import __version__  # noqa: PLC0415
-
-        return {
-            "Content-Type": "application/json",
-            "User-Agent": f"agentnet-cli/{__version__}",
-        }
-
-    def _public_post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _public_post(self, path: str, body: dict[str, Any] | None = None) -> Any:
         resp = self._http.post(
             f"{self._base}{path}",
             headers=self._public_headers(),
@@ -102,7 +109,7 @@ class PlatformClient:
         )
         return self._handle_response(resp)
 
-    def _public_get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _public_get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         resp = self._http.get(
             f"{self._base}{path}",
             headers=self._public_headers(),
@@ -110,97 +117,44 @@ class PlatformClient:
         )
         return self._handle_response(resp)
 
-    def cli_login_start(self) -> dict[str, Any]:
-        return self._public_post("/auth/cli/login/start")
+    def cli_bootstrap(self) -> dict[str, Any]:
+        """Mint a guest API token (pre-login) via ``POST /auth/cli/bootstrap``."""
+        return self._public_post("/auth/cli/bootstrap")
+
+    def cli_login_start(self, *, claim_api_token: str | None = None) -> dict[str, Any]:
+        """Start a CLI browser login flow.
+
+        Pass ``claim_api_token`` (guest bootstrap key) so authorize elevates
+        that agent into the user's org.
+        """
+        body: dict[str, Any] = {}
+        if claim_api_token:
+            body["claim_api_token"] = claim_api_token
+        return self._public_post("/auth/cli/login/start", body or None)
 
     def cli_login_poll(self, *, login_id: str, poll_secret: str) -> dict[str, Any]:
+        """Poll a CLI login flow for completion."""
         _validate_path_segment(login_id)
         return self._public_get(
             f"/auth/cli/login/{login_id}",
             {"poll_secret": poll_secret},
         )
 
-    def discover(self, *, query: str, category: str | None = None, max_results: int = 5, max_price: int | None = None) -> dict[str, Any]:
-        params: dict[str, Any] = {"q": query, "limit": max_results}
-        if category:
-            params["category"] = category
-        if max_price is not None:
-            params["max_price"] = max_price
-        return self._get("/discover/listings", params)
-
-    def discover_agents(self, *, query: str, limit: int = 20) -> dict[str, Any]:
-        return self._get("/discover/", {"q": query, "limit": limit})
-
-    def search(
-        self,
-        *,
-        query: str,
-        kind: str = "all",
-        category: str | None = None,
-        limit: int = 20,
-        max_price: int | None = None,
-    ) -> dict[str, Any]:
-        params: dict[str, Any] = {"q": query, "type": kind, "limit": limit}
-        if category:
-            params["category"] = category
-        if max_price is not None:
-            params["max_price"] = max_price
-        return self._get("/discover/search", params)
-
-    def get_agent(self, *, agent_id: str) -> dict[str, Any]:
-        _validate_path_segment(agent_id)
-        return self._get(f"/agents/{agent_id}")
-
-    def get_skill(self, *, skill_id: str) -> dict[str, Any]:
-        normalized = skill_id.removeprefix("skill:")
-        _validate_skill_path(normalized)
-        return self._get(f"/discover/skills/{normalized}")
-
-    def list_agents(self) -> dict[str, Any]:
-        return self._get("/agents/")
-
-    def use_agent(
-        self,
-        *,
-        agent_id: str,
-        task: str,
-        quote_id: str | None = None,
-        max_amount: float = 0,
-        harness: str | None = None,
-        session: str | None = None,
-        classifier_model: str | None = None,
-        model: str | None = None,
-    ) -> dict[str, Any]:
-        """``harness``/``session``/``classifier_model``/``model`` are optional call context, added
-        to the body only when known — best-effort, never required."""
-        _validate_path_segment(agent_id)
-        body: dict[str, Any] = {"message": task, "amount": max_amount}
-        if harness:
-            body["harness"] = harness
-        if session:
-            body["session_id"] = session
-        if classifier_model:
-            body["classifier_model"] = classifier_model
-        if model:
-            body["model"] = model
-        return self._post(f"/agents/{agent_id}/use", body)
-
-    def continue_session(self, *, session_id: str, message: str) -> dict[str, Any]:
-        return self._post(f"/agents/sessions/{session_id}/continue", {"message": message})
-
-    def settle_session(self, *, session_id: str) -> dict[str, Any]:
-        return self._post(f"/agents/sessions/{session_id}/settle", {})
-
-    def verify_token(self) -> dict[str, Any]:
-        return self._get("/auth/me")
-
-    def token_info(self) -> dict[str, Any]:
-        return self._get("/auth/token-info")
-
     def cli_register_agent(
-        self, *, name: str, visibility: str = "private", description: str = "", url: str = "", tags: list[str] | None = None,
+        self,
+        *,
+        name: str,
+        visibility: str = "private",
+        description: str = "",
+        url: str = "",
+        tags: list[str] | None = None,
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {"name": name, "visibility": visibility, "description": description}
+        """Register a new agent on the platform."""
+        body: dict[str, Any] = {
+            "name": name,
+            "visibility": visibility,
+            "description": description,
+        }
         if url:
             body["url"] = url
         if tags:
@@ -214,22 +168,60 @@ class PlatformClient:
         connector: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        """Send telemetry. Needs a Bearer token. Ignore errors."""
         from agentnet_cli import __version__  # noqa: PLC0415
 
+        if not self._token:
+            return
         body: dict[str, Any] = {"event_type": event_type, "cli_version": __version__}
         if connector:
             body["connector"] = connector
         if metadata:
             body["metadata"] = metadata
         try:
-            if self._token:
-                self._post("/auth/telemetry", body)
-            else:
-                self._public_post("/auth/telemetry", body)
+            self._post("/auth/telemetry", body)
         except Exception:
             pass
 
-    def report_skill_recommendation(
+    def search(
+        self,
+        *,
+        query: str,
+        kind: str = "all",
+        category: str | None = None,
+        limit: int = 20,
+        harness: str | None = None,
+        session: str | None = None,
+    ) -> dict[str, Any]:
+        """Search with ``GET /discover/``.
+
+        Retrieval may send ``harness`` and ``session`` (as ``session_id``).
+        Do not send classifier/model here — those belong on feedback.
+        """
+        params: dict[str, Any] = {"q": query, "type": kind, "limit": limit}
+        if category:
+            params["category"] = category
+        if harness:
+            params["harness"] = harness
+        if session:
+            params["session_id"] = session
+        data = self._get("/discover/", params)
+        if isinstance(data, dict):
+            return data
+        return {"query": query, "type": kind, "results": data if isinstance(data, list) else []}
+
+    def get_agent(self, *, agent_id: str) -> dict[str, Any]:
+        """Get one agent by id."""
+        _validate_path_segment(agent_id)
+        return self._get(f"/agents/{agent_id}")
+
+    def get_skill(self, *, skill_id: str) -> dict[str, Any]:
+        """Get one skill by id."""
+        normalized = skill_id.removeprefix("skill:")
+        _validate_skill_path(normalized)
+        return self._get(f"/discover/skills/{normalized}")
+
+    def send_skill_recommendation(
         self,
         *,
         use_case: str,
@@ -239,10 +231,12 @@ class PlatformClient:
         classifier_model: str | None = None,
         model: str | None = None,
     ) -> None:
-        """Best-effort usage telemetry: which skills the client-side classifier recommended for
-        ``use_case``. The endpoint may not exist on the platform yet — any failure (404 today, or
-        anything else once it does exist) is silently absorbed, exactly like ``send_telemetry``.
+        """Send post-gate feedback to ``POST /skills/discover/feedback``.
+
+        Best-effort: ignore transport and HTTP errors.
         """
+        if not self._token or not recommended:
+            return
         body: dict[str, Any] = {"use_case": use_case, "recommended": recommended}
         if harness:
             body["harness"] = harness

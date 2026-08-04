@@ -1,44 +1,26 @@
-"""Claude Code every-prompt hooks — surface relevant AgentNet skills, token-free.
+"""Claude Code every-prompt hooks — surface relevant AgentNet skills without a token.
 
-Three events, so the work overlaps the answer with zero upfront latency and can steer the
-live agent mid-flight:
+Three events overlap discovery with the answer and can steer the agent mid-flight:
 
-- **UserPromptSubmit** -> ``agentnet skill-hook --pre``: reads the prompt and spawns a
-  *detached* skill-scout worker, then returns immediately (no latency).
-- **PostToolUse** -> ``agentnet skill-hook --peek``: on each tool call, if the worker's
-  outcome is ready and not yet injected, force ``decision:block`` to steer the agent
-  mid-flight (inject-once). Exploits the asymmetry: our ~30-60s outcome lands inside the
-  agent's minutes-long flow.
-- **Stop** -> ``agentnet skill-hook --post``: guaranteed fallback — if nothing steered
-  mid-flight (e.g. a no-tool answer), continue the turn (``decision: block`` +
-  ``additionalContext``) so the agent applies the skill. Otherwise no-op.
+- **UserPromptSubmit** -> ``agentnet skill-hook --pre``: spawn a detached skill-scout worker,
+  then return immediately.
+- **PostToolUse** -> ``agentnet skill-hook --peek``: when the outcome is ready and not injected,
+  return ``decision:block`` to steer mid-flight (inject once).
+- **Stop** -> ``agentnet skill-hook --post``: when nothing steered mid-flight, block the turn and
+  add context so the agent applies the skill.
 
-This is the thin I/O adapter for Claude's event shapes; the worker, session cache, and atomic
-once-claims live behind the shared :mod:`agentnet_cli.tools.skillfire` port — see that package's
-docstring for the full discovery -> classify -> render -> content pipeline.
+This is the thin I/O adapter for Claude event shapes. The worker, session cache, and once-claims
+live in :mod:`agentnet_cli.tools.skillfire`.
 
-Claude Code's ``decision:block`` mechanism prints the entire ``reason``/``additionalContext`` text
-to the user's terminal transcript (native CLI behavior — the hook's output is shown so the user can
-see why a tool call was blocked). Because ``decision:block`` already forces the model to engage —
-unlike a soft ``additionalContext`` reminder, which was ignored in practice — this adapter doesn't
-need the "STEP 1/2/3, reproduce this fenced block verbatim" scaffolding the shared
-``steer_reason``/``fold_context`` (used by Cursor/Hermes) relies on. Instead it builds its **own**
-plain-language wording from the raw outcome (via ``skillfire.check_steer_raw``/``check_fallback_raw``,
-which hand back the bare outcome with no wrapper): present the list, say what's about to happen, and
-trust the block itself to make the model act on it. This also drops the shared "AGENT ONLY — do not
-show the user" framing, which is only true for a harness with a genuine hidden channel (Cursor's
-``agent_message`` vs ``user_message``) — for Claude nothing is actually hidden, so nothing here
-claims otherwise.
+Claude prints ``reason`` and ``additionalContext`` to the user transcript. This adapter builds
+plain-language steer text from the raw outcome with ``check_steer_raw`` and ``check_fallback_raw``.
+It does not use the shared ``steer_reason`` or ``fold_context`` wrappers.
 
-Both events also set ``systemMessage`` to the bare skill list — a field Claude Code's hook schema
-displays directly to the user and never passes to the model, unlike ``reason``/``additionalContext``.
-That makes the list's visibility a platform guarantee rather than something dependent on the model
-choosing to relay it. Undocumented for these specific events (``PostToolUse``/``Stop``) as of writing,
-so ``reason``/``additionalContext`` still carry the list too, as a fallback if it turns out not to be
-honored here.
+Both peek and post also set ``systemMessage`` to the bare skill list. Claude shows that field to
+the user and does not pass it to the model.
 
-``claude -p`` inherits the user's hooks; ``AGENTNET_SKILL_SUBAGENT=1`` in the child env makes
-the hooks no-op inside the subagent so it can't re-trigger itself.
+``claude -p`` inherits the user's hooks. ``AGENTNET_SKILL_SUBAGENT=1`` in the child env makes
+hooks no-op inside the subagent.
 """
 
 from __future__ import annotations
@@ -61,12 +43,10 @@ _SKILL_PATH_RE = re.compile(r"on disk at:\s*\n\s*(\S+)")
 
 
 def _parse_components(outcome: str) -> tuple[str, str]:
-    """Split a shared ``render.compose_outcome()`` payload back into ``(list_block, content)``.
+    """Split a ``render.compose_outcome()`` payload into ``(list_block, content)``.
 
-    The cache always stores the fenced form (built once, shared by all three harnesses); this
-    reverses it so Claude can present the list and content in its own plain wording instead of the
-    shared fenced/STEP format. Read-only reference to render's markers — ``render.py`` itself is
-    never modified.
+    The cache stores the fenced form shared by all harnesses. Reverse it so Claude can use its own
+    plain wording.
     """
     start = outcome.find(render.USER_BLOCK_START)
     end = outcome.find(render.USER_BLOCK_END)
@@ -80,9 +60,7 @@ def _parse_components(outcome: str) -> tuple[str, str]:
 
 
 def _apply_tail(content: str) -> str:
-    """The "apply the top match" sentence — names the temp SKILL.md path directly when content.py's
-    phrasing has one; falls back to the raw content (e.g. the brokered-A2A recommendation, which
-    has no on-disk path) otherwise."""
+    """Return the apply-the-top-match sentence for steer text."""
     match = _SKILL_PATH_RE.search(content)
     if match:
         return (
@@ -93,22 +71,13 @@ def _apply_tail(content: str) -> str:
 
 
 def _system_message(outcome: str) -> str:
-    """The clean list, sent via ``systemMessage`` — displayed to the user directly by Claude Code,
-    never passed to the model. Unlike ``reason``/``additionalContext``, this doesn't depend on the
-    model choosing to relay anything: it's a platform-guaranteed display, not an instruction.
-    """
+    """Return the clean list for ``systemMessage`` (user-only display in Claude Code)."""
     list_block, _content = _parse_components(outcome)
     return list_block
 
 
 def _steer_reason(outcome: str) -> str:
-    """Claude's own mid-run steer wording (see module docstring for why this isn't shared).
-
-    Reordering this to lead with "share the list first" didn't change the model's behavior in live
-    testing (it still skipped straight to unrelated work either way), so this stays in the simpler
-    shape — list right after the intro, one closing instruction. ``systemMessage`` remains the only
-    actually-guaranteed channel for the list; nothing in this text can force compliance.
-    """
+    """Build Claude mid-run steer wording from a raw outcome."""
     list_block, content = _parse_components(outcome)
     tail = (
         f"Share this list with the user, then {_apply_tail(content)}"
@@ -120,7 +89,7 @@ def _steer_reason(outcome: str) -> str:
 
 
 def _fold_context(outcome: str) -> str:
-    """Claude's own turn-end fallback wording (see module docstring for why this isn't shared)."""
+    """Build Claude turn-end fallback wording from a raw outcome."""
     list_block, content = _parse_components(outcome)
     tail = (
         f"Before finishing, share this list with the user, then {_apply_tail(content)}"
@@ -132,10 +101,10 @@ def _fold_context(outcome: str) -> str:
 
 
 def run_claude_pre(*, limit: int, timeout: float) -> None:
-    """UserPromptSubmit: spawn the detached worker for this prompt, then return immediately.
+    """Handle UserPromptSubmit: spawn the detached worker, then return immediately.
 
-    Guarded by :func:`skillfire.spawn_worker`'s per-prompt spawn claim so duplicate ``--pre``
-    registrations (settings.json + the plugin's ``hooks.json``) spawn exactly one worker.
+    ``spawn_worker`` uses a per-prompt spawn claim so duplicate ``--pre`` registrations spawn one
+    worker.
     """
     if os.environ.get(skillfire.SUBAGENT_ENV):
         return  # inside the subagent — never spawn another
@@ -150,11 +119,7 @@ def run_claude_pre(*, limit: int, timeout: float) -> None:
 
 
 def run_claude_peek(*, limit: int, timeout: float) -> None:
-    """PostToolUse: force the agent to consider the skill mid-run (decision:block), once.
-
-    ``decision:block`` + ``reason`` blocks the agentic loop and makes the model address the skill
-    *while still running the task* — a soft ``additionalContext`` reminder was ignored in practice.
-    """
+    """Handle PostToolUse: block once and steer the agent mid-run with ``decision:block``."""
     if os.environ.get(skillfire.SUBAGENT_ENV):
         return
     event = skillfire.read_event()
@@ -177,11 +142,7 @@ def run_claude_peek(*, limit: int, timeout: float) -> None:
 
 
 def run_claude_post(*, limit: int, timeout: float) -> None:
-    """Stop: fallback surface for no-tool answers — force the steer at turn end.
-
-    Only fires when nothing already steered mid-run (the shared emit claim), so a tool-using task
-    that was hard-nudged already won't also get a fallback.
-    """
+    """Handle Stop: steer at turn end when nothing steered mid-flight."""
     if os.environ.get(skillfire.SUBAGENT_ENV):
         return
     event = skillfire.read_event()
