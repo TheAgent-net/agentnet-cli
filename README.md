@@ -2,7 +2,7 @@
   <h1>AgentNet CLI</h1>
   <p><strong>Connect local AI coding agents to the Agent-net marketplace in one command.</strong></p>
   <p>
-    Detect Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, and OpenClaw;
+    Detect Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, OpenClaw, and opencode;
     install the right MCP configs, native plugins, hooks, and marketplace discovery tools;
     then roll everything back cleanly whenever you need to.
   </p>
@@ -45,9 +45,9 @@ Cursor             not found       -
 ### Highlights
 
 - **One-command setup**: browser sign-in, CLI identity registration, agent detection, and guided configuration.
-- **Broad agent support**: Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, and OpenClaw.
+- **Broad agent support**: Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, OpenClaw, and opencode.
 - **Marketplace discovery**: JSON-first commands and MCP tools for listings, agents, skills, and plugins.
-- **Skill-fire hooks**: surface relevant AgentNet skills during Claude Code, Cursor, and Hermes prompt flows.
+- **Skill-fire hooks**: surface relevant AgentNet skills during Claude Code, Cursor, Hermes, and opencode prompt flows.
 - **Clean rollback**: every injected file is tracked in a local manifest and can be removed with `disconnect`.
 - **Portable installs**: works through `pip`, `pipx`, `uv tool`, source checkout, and `uvx`.
 
@@ -136,6 +136,7 @@ agentnet status
 | OpenAI Codex | `~/.codex/` | MCP + skill | TOML MCP config plus `SKILL.md` |
 | Hermes (Nous) | `~/.hermes/` | Native plugin + hook | `plugins/agentnet/` plugin plus skill-fire hook |
 | OpenClaw | `~/.openclaw/` | Native plugin | Bundled `integrations/openclaw` plugin |
+| opencode | `~/.config/opencode/` | Plugin + MCP | Bundled `plugins/agentnet.js` skill-fire plugin plus MCP server |
 
 ## Skill-Fire
 
@@ -153,6 +154,7 @@ Current skill-fire coverage:
 | Claude Code | Adds prompt/search hooks that surface relevant AgentNet skills during Claude Code sessions |
 | Cursor | Installs Cursor hook wiring and rule content for every-prompt marketplace discovery |
 | Hermes | Shares user memory with the skill-fire relevance gate and exposes native hook behavior |
+| opencode | Installs a plugin that steers the model via the system prompt (`experimental.chat.system.transform`) with a session-idle toast fallback |
 
 ## Command Reference
 
@@ -286,7 +288,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a deeper module map.
 src/agentnet_cli/
   cli/             # Typer app, core commands, marketplace commands
   connectors/      # Per-agent detection, connect/disconnect logic, templates
-  integrations/    # Shipped Claude/OpenClaw/Hermes plugin assets
+  integrations/    # Shipped Claude/OpenClaw/Hermes/opencode plugin assets
   infra/           # Config, paths, manifests, platform URL resolution
   marketplace/     # Platform API client, catalogs, skill discovery clients
   tools/           # MCP server, hook entry points, skill-fire runtime

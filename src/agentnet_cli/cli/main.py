@@ -20,7 +20,7 @@ console = Console()
 
 # Internal hook commands that run on the agent's critical path — the callback skips auto-update for
 # these so a tool call is never blocked; the detached worker handles it instead.
-_HOOK_COMMANDS = {"skill-hook", "cursor-hook", "hermes-hook"}
+_HOOK_COMMANDS = {"skill-hook", "cursor-hook", "hermes-hook", "opencode-hook"}
 
 
 def _version_callback(value: bool) -> None:
@@ -397,6 +397,36 @@ def hermes_hook(
         run_hermes_peek(limit=limit, timeout=hook_timeout)
     else:  # default and --post
         run_hermes_post(limit=limit, timeout=hook_timeout)
+
+
+@app.command(name="opencode-hook", hidden=True)
+def opencode_hook(
+    pre: bool = typer.Option(False, "--pre", help="chat.message: spawn the discovery worker"),
+    peek: bool = typer.Option(False, "--peek", help="system.transform: steer text for the system prompt"),
+    post: bool = typer.Option(False, "--post", help="session.idle: fold in relevant AgentNet skills"),
+    session: str = typer.Option("", "--session", help="opencode session id"),
+    query: str = typer.Option("", "--query", help="Prompt text (for --pre)"),
+    limit: int = typer.Option(6, "--limit", help="Max skills to suggest"),
+    hook_timeout: float = typer.Option(
+        3.0, "--timeout", help="Max seconds a hook waits for the worker's result",
+    ),
+) -> None:
+    """opencode plugin hooks — surface relevant AgentNet skills (internal).
+
+    The bundled JS plugin passes ``--session``/``--query`` as args (opencode plugins hold the event
+    in-process). ``--pre`` (chat.message) spawns the shared discovery worker; ``--peek``
+    (experimental.chat.system.transform) prints the steer text the plugin pushes onto the model's
+    system prompt; ``--post`` (session.idle) prints the fallback the plugin shows as a toast.
+    Best-effort: nothing/exit 0 on error.
+    """
+    from ..tools.opencode_hook import run_opencode_peek, run_opencode_post, run_opencode_pre
+
+    if pre:
+        run_opencode_pre(session, query, limit=limit, timeout=hook_timeout)
+    elif peek:
+        run_opencode_peek(session, limit=limit, timeout=hook_timeout)
+    else:  # default and --post
+        run_opencode_post(session, limit=limit, timeout=hook_timeout)
 
 
 @app.command(name="enable-skill-fire")

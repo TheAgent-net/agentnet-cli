@@ -1,8 +1,8 @@
 """Backend-aware relevance gate: run a classifier over real skill candidates.
 
-Three CLI/runtime backends (Claude, Cursor, Hermes), tried in the requested order with fallback to
-the others, so a machine with only one still gates. Each returns raw stdout/response text or
-``None`` if that backend is unavailable; :func:`classify` parses whichever one actually ran.
+Four CLI/runtime backends (Claude, Cursor, Hermes, opencode), tried in the requested order with
+fallback to the others, so a machine with only one still gates. Each returns raw stdout/response
+text or ``None`` if that backend is unavailable; :func:`classify` parses whichever one actually ran.
 """
 
 from __future__ import annotations
@@ -126,10 +126,39 @@ def _run_hermes_classifier(msg: str, *, timeout: float) -> str | None:
     return (result.get("final_response") or "").strip() or None
 
 
+def _run_opencode_classifier(msg: str, *, timeout: float) -> str | None:
+    """Run the gate via ``opencode run --pure`` on the user's own opencode model. stdout, or None.
+
+    This is the **native** opencode gate: an opencode user needn't have Claude or Cursor installed.
+    ``--pure`` runs without external plugins, so it can't recurse into our own agentnet plugin (and
+    is faster). opencode has no system-prompt flag, so the classifier instructions are prepended to
+    the message. ``AGENTNET_OPENCODE_CLASSIFIER_MODEL`` (``provider/model``) pins a cheaper/faster
+    gate model; otherwise opencode's configured default runs. Returns None if opencode isn't
+    installed or errors, so the caller falls back to another backend.
+    """
+    exe = shutil.which("opencode")
+    if not exe:
+        return None
+    env = {**os.environ, config.SUBAGENT_ENV: "1"}  # belt-and-suspenders with --pure
+    argv = [exe, "run", "--pure"]
+    model = os.environ.get(config.OPENCODE_MODEL_ENV, "").strip()
+    if model:
+        argv += ["--model", model]
+    argv.append(f"{config.CLASSIFIER_PROMPT}\n\n{msg}")
+    try:
+        proc = subprocess.run(  # noqa: S603
+            argv, capture_output=True, text=True, timeout=timeout, env=env, check=False
+        )
+    except Exception:  # noqa: BLE001 — best-effort
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
 _CLASSIFIER_RUNNERS = {
     "claude": _run_claude_classifier,
     "cursor": _run_cursor_classifier,
     "hermes": _run_hermes_classifier,
+    "opencode": _run_opencode_classifier,
 }
 
 
@@ -165,6 +194,8 @@ def resolve_classifier_model(backend: str) -> str | None:
         return config.SUBAGENT_MODEL
     if backend == "cursor":
         return os.environ.get(config.CURSOR_MODEL_ENV, "").strip() or None
+    if backend == "opencode":
+        return os.environ.get(config.OPENCODE_MODEL_ENV, "").strip() or None
     if backend == "hermes":
         try:
             from gateway.run import _resolve_gateway_model  # noqa: PLC0415
@@ -177,13 +208,31 @@ def resolve_classifier_model(backend: str) -> str | None:
     return None
 
 
+def _gate_order(backend: str) -> list[str]:
+    """The backend try-order for ``classify``: requested first, then the rest as fallback.
+
+    Exception: opencode's own gate (``opencode run --pure``) has ~15-25s of fixed startup, so for the
+    opencode harness we prefer a fast local CLI gate (``claude``/``cursor``, ~5s) when installed and
+    fall back to the opencode model only on a machine that has neither — the relevance gate is a
+    cheap classifier, not the user's coding model, so the fastest available one is the right choice.
+    ``harness`` stays ``opencode`` regardless (only the gate's *speed* changes), and model attribution
+    already follows the backend that actually ran.
+    """
+    if backend == "opencode":
+        # claude -p (Haiku) is the fastest gate (~5s) when installed; else the native opencode gate
+        # (~7-20s) — kept ahead of cursor-agent, whose headless run can be very slow.
+        return ["claude", "opencode", "cursor", "hermes"]
+    return [backend] + [b for b in config.CLASSIFIER_BACKENDS if b != backend]
+
+
 def classify(
     query: str, cand_text: str, *, timeout: float, backend: str = "claude"
 ) -> tuple[list[dict[str, str]], str | None]:
     """Relevance classifier over the real candidates — the gate. Returns ``(relevant, actual_backend)``.
 
-    Runs on ``backend``'s CLI (``claude -p`` or ``cursor-agent -p``); if that CLI is unavailable or
-    errors, falls back to the other so a machine with only one still gates. ``actual_backend`` is
+    Runs on ``backend``'s runtime (``claude -p``, ``cursor-agent -p``, in-process Hermes, or
+    ``opencode run --pure``); if that is unavailable or errors, falls back to the others so a machine
+    with only one still gates. ``actual_backend`` is
     whichever backend in ``CLASSIFIER_BACKENDS`` actually produced a result — **not necessarily**
     the requested ``backend`` — so a caller attributing the result (e.g. reporting
     ``classifier_model``) resolves the model for the backend that really ran, not the one it asked
@@ -192,7 +241,7 @@ def classify(
     nothing.
     """
     msg = f"REQUEST_TEXT:\n{query}\n\nCANDIDATES:\n{cand_text}"
-    order = [backend] + [b for b in config.CLASSIFIER_BACKENDS if b != backend]
+    order = _gate_order(backend)
     for name in order:
         runner = _CLASSIFIER_RUNNERS.get(name)
         if runner is None:

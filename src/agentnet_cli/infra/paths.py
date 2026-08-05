@@ -15,6 +15,7 @@ class AgentName(StrEnum):
     CODEX = "codex"
     HERMES = "hermes"
     OPENCLAW = "openclaw"
+    OPENCODE = "opencode"
 
 
 _AGENT_DOT_DIRS: dict[AgentName, str] = {
@@ -25,6 +26,9 @@ _AGENT_DOT_DIRS: dict[AgentName, str] = {
     AgentName.CODEX: ".codex",
     AgentName.HERMES: ".hermes",
     AgentName.OPENCLAW: ".openclaw",
+    # opencode's config/plugins live under XDG config, not a home dot-dir. This is the fallback
+    # when $XDG_CONFIG_HOME is unset; agent_config_root() honors that env var (see below).
+    AgentName.OPENCODE: ".config/opencode",
 }
 
 _AGENT_BINARIES: dict[AgentName, list[str]] = {
@@ -35,6 +39,7 @@ _AGENT_BINARIES: dict[AgentName, list[str]] = {
     AgentName.CODEX: ["codex"],
     AgentName.HERMES: ["hermes"],
     AgentName.OPENCLAW: ["openclaw"],
+    AgentName.OPENCODE: ["opencode"],
 }
 
 
@@ -47,6 +52,12 @@ def agent_config_root(agent: AgentName) -> Path:
         appdata = os.environ.get("APPDATA", "")
         if appdata:
             return Path(appdata) / "Claude"
+    if agent == AgentName.OPENCODE:
+        # opencode reads its config/plugins from $XDG_CONFIG_HOME/opencode (defaulting to
+        # ~/.config/opencode), not a home dot-dir like the other agents.
+        xdg = os.environ.get("XDG_CONFIG_HOME", "")
+        base = Path(xdg) if xdg else Path.home() / ".config"
+        return base / "opencode"
     return Path.home() / _AGENT_DOT_DIRS[agent]
 
 
@@ -62,6 +73,7 @@ _DISPLAY_NAMES: dict[AgentName, str] = {
     AgentName.CODEX: "Codex",
     AgentName.HERMES: "Hermes",
     AgentName.OPENCLAW: "OpenClaw",
+    AgentName.OPENCODE: "opencode",
 }
 
 

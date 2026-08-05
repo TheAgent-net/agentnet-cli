@@ -8,6 +8,7 @@ from .vscode import VSCodeConnector
 from .codex import CodexConnector
 from .hermes import HermesConnector
 from .openclaw import OpenClawConnector
+from .opencode import OpenCodeConnector
 
 _CONNECTORS: dict[AgentName, type[AgentConnector]] = {
     AgentName.CLAUDE: ClaudeConnector,
@@ -17,6 +18,7 @@ _CONNECTORS: dict[AgentName, type[AgentConnector]] = {
     AgentName.CODEX: CodexConnector,
     AgentName.HERMES: HermesConnector,
     AgentName.OPENCLAW: OpenClawConnector,
+    AgentName.OPENCODE: OpenCodeConnector,
 }
 
 

@@ -15,12 +15,15 @@ _DEFAULT_PLATFORM_URL = "https://app.agentnet.market"
 SUBAGENT_MODEL = "claude-haiku-4-5-20251001"
 SUBAGENT_TIMEOUT = 60.0
 # The relevance gate runs on the harness-native runtime: `claude -p` (Claude), `cursor-agent -p`
-# (Cursor), or an in-process AIAgent (Hermes). The requested backend is tried first, then the
-# others as a fallback, so a machine with only one still gates.
-CLASSIFIER_BACKENDS = ("claude", "cursor", "hermes")
+# (Cursor), an in-process AIAgent (Hermes), or `opencode run --pure` (opencode). The requested
+# backend is tried first, then the others as a fallback, so a machine with only one still gates.
+CLASSIFIER_BACKENDS = ("claude", "cursor", "hermes", "opencode")
 # cursor-agent uses the user's default Cursor model for the gate; pin a cheaper/faster one via this
 # env var (e.g. AGENTNET_CURSOR_CLASSIFIER_MODEL=gpt-5-mini).
 CURSOR_MODEL_ENV = "AGENTNET_CURSOR_CLASSIFIER_MODEL"
+# opencode gates on the user's configured opencode model; pin a cheaper/faster one (provider/model)
+# via this env var (e.g. AGENTNET_OPENCODE_CLASSIFIER_MODEL=anthropic/claude-haiku-4-5).
+OPENCODE_MODEL_ENV = "AGENTNET_OPENCODE_CLASSIFIER_MODEL"
 # Set in the subagent's env so the inherited hooks no-op there.
 SUBAGENT_ENV = "AGENTNET_SKILL_SUBAGENT"
 # Prefix on every injected message; also the loop guard — an adapter recognizes its own prior

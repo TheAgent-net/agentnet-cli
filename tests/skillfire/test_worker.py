@@ -23,7 +23,7 @@ def _run_subagent(query="review my code",
         return MagicMock(returncode=rc, stdout=stdout)
 
     def fake_which(name):
-        if name in ("claude", "cursor-agent") and not has_classifier:
+        if name in ("claude", "cursor-agent", "opencode") and not has_classifier:
             return None  # no gate CLI at all
         return "/usr/bin/" + name
 

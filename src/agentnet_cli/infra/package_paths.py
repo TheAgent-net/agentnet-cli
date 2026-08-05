@@ -16,5 +16,10 @@ def bundled_openclaw_plugin() -> Path:
     return bundled_integrations_root() / "openclaw"
 
 
+def bundled_opencode_plugin() -> Path:
+    """Directory holding the opencode JS plugin (agentnet.js) shipped in the wheel."""
+    return bundled_integrations_root() / "opencode"
+
+
 def bundled_discovery_base() -> Path:
     return bundled_integrations_root() / "shared" / "discovery-skill.base.md"

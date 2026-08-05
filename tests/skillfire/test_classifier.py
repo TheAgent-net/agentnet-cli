@@ -159,3 +159,50 @@ def test_resolve_classifier_model_hermes_none_outside_hermes(monkeypatch):
 
 def test_resolve_classifier_model_unknown_backend():
     assert classifier.resolve_classifier_model("something-else") is None
+
+
+# ── opencode gate: native `opencode run --pure` on the user's own model ────────
+def test_opencode_classifier_argv(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        captured["env"] = kw.get("env", {})
+        return MagicMock(returncode=0, stdout='{"skills":[]}')
+
+    monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", _which_all)
+    monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.subprocess.run", fake_run)
+    monkeypatch.delenv(config.OPENCODE_MODEL_ENV, raising=False)
+    classifier._run_opencode_classifier("REQUEST_TEXT:\nx\n\nCANDIDATES:\n- foo", timeout=10)
+    cmd = captured["cmd"]
+    assert cmd[0].endswith("opencode")
+    assert cmd[1] == "run" and "--pure" in cmd  # native headless gate, no plugin recursion
+    assert "--model" not in cmd  # default opencode model unless pinned
+    assert config.CLASSIFIER_PROMPT in cmd[-1] and "REQUEST_TEXT" in cmd[-1]  # prompt + candidates
+    assert captured["env"].get(config.SUBAGENT_ENV) == "1"  # recursion guard
+
+
+def test_opencode_classifier_model_override(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0, stdout="{}")
+
+    monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", _which_all)
+    monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.subprocess.run", fake_run)
+    monkeypatch.setenv(config.OPENCODE_MODEL_ENV, "anthropic/claude-haiku-4-5")
+    classifier._run_opencode_classifier("m", timeout=5)
+    assert "--model" in captured["cmd"] and "anthropic/claude-haiku-4-5" in captured["cmd"]
+
+
+def test_opencode_classifier_absent(monkeypatch):
+    monkeypatch.setattr("agentnet_cli.tools.skillfire.classifier.shutil.which", lambda n: None)
+    assert classifier._run_opencode_classifier("m", timeout=5) is None
+
+
+def test_resolve_classifier_model_opencode_reads_env(monkeypatch):
+    monkeypatch.delenv(config.OPENCODE_MODEL_ENV, raising=False)
+    assert classifier.resolve_classifier_model("opencode") is None  # not pinned -> unknown
+    monkeypatch.setenv(config.OPENCODE_MODEL_ENV, "anthropic/claude-haiku-4-5")
+    assert classifier.resolve_classifier_model("opencode") == "anthropic/claude-haiku-4-5"
