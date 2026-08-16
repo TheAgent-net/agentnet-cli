@@ -8,7 +8,7 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
-- **Testing:** pytest (511 tests), pytest-cov
+- **Testing:** pytest (543 tests), pytest-cov
 - **CI:** GitHub Actions (lint + test matrix on 3.10/3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 
@@ -38,6 +38,7 @@ uv run agentnet --help           # Run locally
 - **Agent Connector:** Abstract `AgentConnector` base with `detect()`, `connect()`, `disconnect()`. Add new agents by subclassing and registering in `registry.py`.
 - **Manifest rollback:** `manifest.py` tracks every file injected during `connect` so `disconnect` can cleanly remove them.
 - **Config persistence:** `~/.agentnet/config.json` stores platform credentials (0600 permissions). Agent custom paths stored separately.
+- **Guest credentials:** `infra/credentials.py` is the sole token/tier source. `setup`/`register` call `ensure_guest_credentials()` before browser login, then pass the guest key as `claim_api_token` to `cli_login_start()` so authorize elevates that agent into the user's org. Setup treats only `tier=authenticated` as signed in (guest still triggers Step 1).
 - **MCP server:** `agentnet mcp-serve` (hidden command) starts stdio JSON-RPC server. Agents launch this as a subprocess.
 - **Marketplace commands:** All output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
 - **Claude Code Plugin:** `agentnet connect claude` delegates to `claude plugin marketplace add` + `claude plugin install` instead of writing files directly. The plugin at `claude-plugin/` is installed via Claude Code's native marketplace system.

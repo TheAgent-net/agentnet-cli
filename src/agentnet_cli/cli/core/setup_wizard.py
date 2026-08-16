@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ...infra.config import load_config
+from ...infra.credentials import is_authenticated
 from ...infra.platform import resolve_platform_url
 from ...marketplace.client import PlatformClient
 from .connect import connect_command
@@ -38,8 +39,7 @@ def _send_telemetry(event_type: str, **metadata: str) -> None:
 
 def setup_command(platform_url: str | None = None, *, choose: bool = False) -> None:
     _send_telemetry("cli_setup")
-    config = load_config()
-    if not config or not config.get("api_token"):
+    if not is_authenticated():
         console.print()
         console.print("  [bold]Step 1:[/bold] Sign in to AgentNet")
         register_command(

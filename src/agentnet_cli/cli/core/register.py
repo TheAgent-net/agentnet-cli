@@ -10,6 +10,14 @@ from rich.console import Console
 from rich.table import Table
 
 from ...infra.config import load_config, save_config
+from ...infra.credentials import (
+    TIER_AUTHENTICATED,
+    TIER_GUEST,
+    ensure_guest_credentials,
+    get_api_token,
+    get_auth_tier,
+    is_authenticated,
+)
 from ...infra.platform import resolve_platform_url
 from ...marketplace.client import PlatformClient
 
@@ -24,15 +32,25 @@ def register_command(
     auto_visibility: str = "private",
 ) -> None:
     existing = load_config()
-    if existing and existing.get("api_token"):
+    if is_authenticated(config=existing):
         console.print(f"\n  [green]Already registered[/green] on {existing.get('platform_url')}")
         if not typer.confirm("  Re-register?"):
             return
 
     url = resolve_platform_url(explicit_url=platform_url, use_config=False)
 
+    try:
+        guest_cfg = ensure_guest_credentials(platform_url=url)
+    except Exception as exc:
+        console.print(f"  [red]✗[/red] Failed to bootstrap guest credentials: {exc}\n")
+        raise typer.Exit(1) from exc
+
+    claim_api_token = None
+    if get_auth_tier(config=guest_cfg) == TIER_GUEST:
+        claim_api_token = get_api_token(config=guest_cfg) or None
+
     client = PlatformClient(base_url=url)
-    info = _browser_login(client)
+    info = _browser_login(client, claim_api_token=claim_api_token)
     api_token = info["api_token"]
     client = PlatformClient(base_url=url, api_token=api_token)
 
@@ -96,6 +114,7 @@ def register_command(
         "api_token": agent_api_key or api_token,
         "org_id": org_id,
         "agent_id": agent_id,
+        "tier": TIER_AUTHENTICATED,
     }
     save_config(config)
 
@@ -115,14 +134,18 @@ def default_agent_name() -> str:
     return f"{user}@{host} AgentNet CLI"[:200]
 
 
-def _browser_login(client: PlatformClient) -> dict:
+def _browser_login(
+    client: PlatformClient,
+    *,
+    claim_api_token: str | None = None,
+) -> dict:
     console.print()
     console.print("  [bold]Sign in to AgentNet[/bold]")
     console.print("  [dim]A browser window will open so AgentNet can authorize this CLI.[/dim]")
     console.print()
 
     try:
-        login = client.cli_login_start()
+        login = client.cli_login_start(claim_api_token=claim_api_token)
     except Exception as exc:
         console.print(f"  [red]✗[/red] Failed to start browser login: {exc}\n")
         raise typer.Exit(1) from exc

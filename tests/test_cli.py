@@ -200,6 +200,27 @@ def test_setup_registers_when_missing_config(fake_home):
     connect.assert_not_called()
 
 
+def test_setup_registers_when_only_guest_credentials(fake_home):
+    """Guest tokens are not fully signed in — setup still runs browser login."""
+    from agentnet_cli.infra.config import save_config
+
+    save_config({
+        "api_token": "ank1_guest",
+        "platform_url": "https://x",
+        "org_id": "org_guest",
+        "agent_id": "agt_guest",
+        "tier": "guest",
+    })
+    with patch("agentnet_cli.cli.core.setup_wizard.register_command") as register, \
+         patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=[]), \
+         patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
+        result = runner.invoke(app, ["setup"])
+
+    assert result.exit_code == 0
+    register.assert_called_once()
+    connect.assert_not_called()
+
+
 def test_setup_connects_all_detected_agents_by_default(fake_home):
     from agentnet_cli.infra.config import save_config
 
