@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .config import _atomic_write
 from .paths import agentnet_home
+
+UTC = timezone.utc
 
 
 def _manifest_path() -> Path:

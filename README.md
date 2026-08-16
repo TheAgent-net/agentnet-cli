@@ -70,7 +70,8 @@ Cursor             not found       -
 
 ## Install
 
-AgentNet CLI requires **Python 3.11+**.
+AgentNet CLI requires **Python 3.10+**. If your system Python is older, use
+`uvx agentnet` — it downloads a compatible interpreter automatically.
 
 ```bash
 # Install the latest release from PyPI
@@ -326,7 +327,7 @@ uv run agentnet --help
 
 Notes:
 
-- Use Python 3.11 or newer.
+- Use Python 3.10 or newer.
 - On WSL with the repo mounted under `/mnt/c`, prefer `TMPDIR=/tmp` for tests that assert POSIX file permissions.
 - Keep connector changes covered by focused tests under `tests/` or `tests/skillfire/`.
 

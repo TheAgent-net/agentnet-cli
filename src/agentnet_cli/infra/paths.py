@@ -3,8 +3,16 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from enum import StrEnum
 from pathlib import Path
+
+try:
+    from enum import StrEnum
+except ImportError:  # Python 3.10
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        def __str__(self) -> str:
+            return str(self.value)
 
 
 class AgentName(StrEnum):
