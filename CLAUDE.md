@@ -4,12 +4,12 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 
 ## Tech Stack
 
-- **Language:** Python 3.11+ (ruff linting, 100-char line length)
+- **Language:** Python 3.10+ (ruff linting, 100-char line length)
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
 - **Testing:** pytest (511 tests), pytest-cov
-- **CI:** GitHub Actions (lint + test matrix on 3.11/3.12/3.13)
+- **CI:** GitHub Actions (lint + test matrix on 3.10/3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 
 ## Repository Structure
@@ -63,7 +63,7 @@ uv run agentnet --help           # Run locally
 
 ## CI/CD
 
-- **CI (`ci.yml`):** Lint (ruff) + tests across Python 3.11/3.12/3.13 on PRs and pushes to main
+- **CI (`ci.yml`):** Lint (ruff) + tests across Python 3.10/3.11/3.12/3.13 on PRs and pushes to main
 - **Publish (`publish.yml`):** Tags matching `v*` trigger PyPI publish via trusted publisher (OIDC)
 
 ## Documentation Requirements
