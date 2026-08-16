@@ -20,6 +20,9 @@ class AgentName(str, Enum):
     importable on Python 3.10 (``StrEnum`` is 3.11+).
     """
 
+    def __str__(self) -> str:
+        return self.value
+
     CLAUDE = "claude"
     CURSOR = "cursor"
     COPILOT = "copilot"
