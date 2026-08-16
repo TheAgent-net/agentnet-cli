@@ -1,8 +1,7 @@
-"""Backend-aware relevance gate: run a classifier over real skill candidates.
+"""Backend-aware relevance gate: classify real skill candidates.
 
-Three CLI/runtime backends (Claude, Cursor, Hermes), tried in the requested order with fallback to
-the others, so a machine with only one still gates. Each returns raw stdout/response text or
-``None`` if that backend is unavailable; :func:`classify` parses whichever one actually ran.
+Three backends (Claude, Cursor, Hermes) are tried in the requested order with fallback.
+Each returns stdout or ``None`` when unavailable. :func:`classify` parses the result.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from . import config
 
 
 def _write_isolating_mcp_config() -> Path | None:
-    """Empty strict MCP config so the subagent loads none of the user's MCP servers."""
+    """Write an empty strict MCP config so the subagent loads no user MCP servers."""
     try:
         fd, name = tempfile.mkstemp(prefix="agentnet-mcp-", suffix=".json")
         with os.fdopen(fd, "w") as f:
@@ -29,7 +28,7 @@ def _write_isolating_mcp_config() -> Path | None:
 
 
 def _run_claude_classifier(msg: str, *, timeout: float) -> str | None:
-    """Run the gate via a no-tool ``claude -p`` (Haiku). Returns stdout, or None if unavailable."""
+    """Run the gate with ``claude -p`` (Haiku). Return stdout, or ``None`` when unavailable."""
     claude = shutil.which("claude")
     if not claude:
         return None
@@ -62,11 +61,11 @@ def _run_claude_classifier(msg: str, *, timeout: float) -> str | None:
 
 
 def _run_cursor_classifier(msg: str, *, timeout: float) -> str | None:
-    """Run the gate via ``cursor-agent -p`` on the user's Cursor model. stdout, or None.
+    """Run the gate with ``cursor-agent -p``. Return stdout, or ``None`` when unavailable.
 
-    ``--mode ask`` keeps it read-only (no tool/writes); ``--trust`` skips the headless trust prompt.
-    cursor-agent has no system-prompt flag, so the classifier instructions are prepended to the
-    prompt. Needs the user authenticated (``cursor-agent login``) — returns None otherwise.
+    ``--mode ask`` keeps it read-only. ``--trust`` skips the headless trust prompt.
+    cursor-agent has no system-prompt flag, so prepend the classifier instructions to the prompt.
+    Needs ``cursor-agent login`` — return ``None`` when not authenticated.
     """
     exe = shutil.which("cursor-agent")
     if not exe:
@@ -87,21 +86,14 @@ def _run_cursor_classifier(msg: str, *, timeout: float) -> str | None:
 
 
 def _run_hermes_classifier(msg: str, *, timeout: float) -> str | None:
-    """Run the gate as an in-process Hermes ``AIAgent`` on the user's own model. stdout, or None.
+    """Run the gate as an in-process Hermes ``AIAgent``. Return stdout, or ``None``.
 
-    Hermes' advantage over the CLI backends: no subprocess and no separate auth — the gateway
-    helpers resolve the user's configured model *and* provider credentials (API keys, base URLs,
-    OAuth, credential pools), so this works against custom endpoints too.
+    Hermes uses the user's configured model and credentials with no subprocess.
+    ``skip_memory=False`` loads the user's memory for per-user relevance.
+    ``max_iterations=1`` and disabled toolsets keep one classify turn.
 
-    ``skip_memory=False`` loads the user's memory store + profile so the gate can weigh relevance
-    against *this* user's context (stack, preferences) — per-user recommendations. It is only a
-    context signal: the ``memory`` toolset stays in ``disabled_toolsets`` (the gate reads memory but
-    can't spend its single iteration calling memory tools), and ``max_iterations=1`` + the disabled
-    toolsets keep it to one classify turn. (Personalising *discovery* — which skills get fetched —
-    is the higher-leverage follow-up; this only reweights the already-fetched candidates.)
-
-    Only importable when running inside Hermes' venv (``connect hermes`` installs agentnet there);
-    returns None otherwise so the caller falls back to a CLI backend.
+    Importable only inside Hermes' venv. Return ``None`` elsewhere so callers fall back to a CLI
+    backend.
     """
     try:
         from gateway.run import _resolve_gateway_model, _resolve_runtime_agent_kwargs
@@ -134,7 +126,7 @@ _CLASSIFIER_RUNNERS = {
 
 
 def _parse_classifier_json(stdout: str) -> list[dict[str, str]]:
-    """Extract ``{"skills":[{"name","why"}]}`` from raw classifier stdout ([] on any issue)."""
+    """Extract ``{"skills":[{"name","why"}]}`` from classifier stdout. Return ``[]`` on error."""
     text = (stdout or "").strip()
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
@@ -154,12 +146,10 @@ def _parse_classifier_json(stdout: str) -> list[dict[str, str]]:
 
 
 def resolve_classifier_model(backend: str) -> str | None:
-    """Best-effort, no-invocation lookup of which model *would* run the gate for ``backend``.
+    """Return the model name for ``backend`` without running the classifier.
 
-    A pure lookup — never runs the classifier, never shells out — so it's cheap to call just to
-    attach context to an outgoing request. Returns ``None`` when the model can't be determined
-    (e.g. the user hasn't pinned a Cursor model, or this isn't running inside Hermes' venv) rather
-    than guessing.
+    This is a lookup only — no subprocess and no agent run. Return ``None`` when the model is
+    unknown.
     """
     if backend == "claude":
         return config.SUBAGENT_MODEL
@@ -180,16 +170,12 @@ def resolve_classifier_model(backend: str) -> str | None:
 def classify(
     query: str, cand_text: str, *, timeout: float, backend: str = "claude"
 ) -> tuple[list[dict[str, str]], str | None]:
-    """Relevance classifier over the real candidates — the gate. Returns ``(relevant, actual_backend)``.
+    """Classify candidates for relevance. Return ``(relevant, actual_backend)``.
 
-    Runs on ``backend``'s CLI (``claude -p`` or ``cursor-agent -p``); if that CLI is unavailable or
-    errors, falls back to the other so a machine with only one still gates. ``actual_backend`` is
-    whichever backend in ``CLASSIFIER_BACKENDS`` actually produced a result — **not necessarily**
-    the requested ``backend`` — so a caller attributing the result (e.g. reporting
-    ``classifier_model``) resolves the model for the backend that really ran, not the one it asked
-    for. ``None`` only when no backend ran at all, in which case ``relevant`` is also ``[]``. Empty
-    ``relevant`` (with a real ``actual_backend``) => not skill-relevant => the worker surfaces
-    nothing.
+    Run on ``backend``'s CLI first. Fall back to other backends when that CLI is missing or
+    errors. ``actual_backend`` is the backend that produced a result — not always the requested
+    one. Return ``([], None)`` when no backend runs. Empty ``relevant`` with a real backend means
+    the prompt is not skill-relevant.
     """
     msg = f"REQUEST_TEXT:\n{query}\n\nCANDIDATES:\n{cand_text}"
     order = [backend] + [b for b in config.CLASSIFIER_BACKENDS if b != backend]

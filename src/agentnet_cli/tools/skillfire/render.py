@@ -1,16 +1,14 @@
-"""User-facing outcome rendering — PURE functions only, no I/O, nothing here is ever mocked.
+"""User-facing outcome rendering — pure functions only, no I/O.
 
-The list block is written to be reproduced verbatim by the agent, so it carries no agent-only
-noise (no install commands, no paths). :func:`compose_outcome` fences that user-facing text apart
-from the agent-only "read this path" instruction that :mod:`skillfire.content`/:mod:`skillfire.broker`
-attach later.
+The list block is written for verbatim reproduction by the agent. It has no agent-only noise.
+:func:`compose_outcome` fences user-facing text apart from agent-only instructions.
 """
 
 from __future__ import annotations
 
 
 def match_pct(raw_score: str) -> str:
-    """Discovery relevance score rendered as a ``(NN%)`` match indicator, "" when unavailable."""
+    """Return a discovery score as ``(NN%)``, or ``""`` when unavailable."""
     try:
         pct = int(round(float(raw_score)))
     except (TypeError, ValueError):
@@ -21,11 +19,10 @@ def match_pct(raw_score: str) -> str:
 def render_list(
     relevant: list[dict[str, str]], skills: dict[str, dict[str, str]], *, limit: int
 ) -> str:
-    """The user-facing block: ``name (NN%) — what it does for this task``.
+    """Return the user-facing block: ``name (NN%) — what it does for this task``.
 
-    Written to be reproduced verbatim, so it carries no agent-only noise — no install commands
-    (agents executed them, derailing the turn) and no paths (those live in the agent-only section
-    of :func:`compose_outcome`). "" when nothing relevant.
+    Written for verbatim reproduction. No install commands or paths. Return ``""`` when nothing
+    is relevant.
     """
     lines = ["AgentNet found these skills:", ""]
     for s in relevant[:limit]:
@@ -45,7 +42,7 @@ AGENT_ONLY = "----- AGENT ONLY — do not show the user -----"
 
 
 def compose_outcome(list_block: str, content: str) -> str:
-    """Fence the user-facing list apart from the agent-only "read this path" instruction."""
+    """Fence the user-facing list apart from the agent-only read-this-path instruction."""
     if not list_block:
         return content
     if not content:

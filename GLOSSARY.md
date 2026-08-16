@@ -95,7 +95,7 @@ See **A2A**. Pattern: CLI -> platform -> remote agent -> **settled** response, u
 
 ### Bundled
 
-Shipped inside the CLI package (Claude / OpenClaw plugin trees, shared discovery skill base) rather than downloaded at connect time.
+Shipped inside the CLI package (Claude / Cursor / Hermes / OpenClaw plugin trees, shared discovery skill base) rather than downloaded at connect time.
 
 ### Candidate
 
@@ -572,9 +572,9 @@ Grouped meaning-words -- use these instead of inventing synonyms:
 | **cli** | User-facing commands; thin UX |
 | **connectors** | Per-local-agent install/uninstall |
 | **marketplace** | Platform + catalog HTTP clients |
-| **tools** | MCP + Hermes tool surface |
+| **tools** | MCP + skillfire + hook I/O adapters |
 | **infra** | Config, paths, manifest, platform URL |
-| **integrations** | Bundled native plugin trees |
+| **integrations** | Bundled native plugin trees (Claude, Cursor, Hermes, OpenClaw) |
 
 ---
 

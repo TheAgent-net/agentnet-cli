@@ -1,25 +1,18 @@
-"""skillfire — the every-prompt skill-fire pipeline shared by the Claude, Cursor, and Hermes hooks.
+"""Skillfire public port for Claude, Cursor, and Hermes hooks.
 
-This module is **the port**: the only surface a harness adapter (``tools/claude_hook.py``,
-``tools/cursor_hook.py``, ``tools/hermes_hook.py``) may import from. Everything else in this
-package (``config``, ``session``, ``candidates``, ``classifier``, ``render``, ``content``,
-``broker``, ``worker``, ``steer``) is an internal implementation detail, free to change shape
-without touching an adapter.
+Harness adapters may import only this module from skillfire. Other skillfire
+modules are internal.
 
-An adapter's three events reduce to three port calls:
+Adapter events map to three port calls:
 
-- pre-event (submit prompt)  -> :func:`spawn_worker` — launch the detached discovery worker, once.
-- mid-run tool call          -> :func:`check_steer` — an actionable, unclaimed outcome's steer
-  text, or ``None`` to allow the call.
-- turn end / no-tool answer  -> :func:`check_fallback` — the guaranteed fallback steer text, or
-  ``None`` if something already steered.
+- pre-event (submit prompt) -> :func:`spawn_worker` — start the detached worker once.
+- mid-run tool call -> :func:`check_steer` — return steer text, or ``None`` to allow the call.
+- turn end / no-tool answer -> :func:`check_fallback` — return fallback steer text, or ``None``.
 
-:func:`check_steer_raw`/:func:`check_fallback_raw` make the same decisions but return the bare
-outcome with no wrapper text, so a harness can build its own steer wording instead of the shared
-``steer_reason``/``fold_context`` framing (used by ``tools/claude_hook.py``).
+:func:`check_steer_raw` and :func:`check_fallback_raw` return the bare outcome with no
+wrapper text. Harnesses can build their own steer wording.
 
-:func:`run_fetch` is the CLI-invoked entrypoint for the detached worker process itself
-(``agentnet skill-hook --fetch``), spawned by :func:`spawn_worker`.
+:func:`run_fetch` is the CLI entry for the detached worker (``agentnet skill-hook --fetch``).
 """
 
 from __future__ import annotations
