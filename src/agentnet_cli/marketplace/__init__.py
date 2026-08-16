@@ -1,4 +1,4 @@
-"""Platform API client, auth helpers, catalogs, and skill discovery."""
+"""Platform API client and auth helpers."""
 
 from .auth import die, get_agent_id, get_client, output
 

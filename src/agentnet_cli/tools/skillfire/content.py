@@ -1,8 +1,7 @@
-"""Fetch and condense a skill's actual methodology via ``npx skills use <repo>@<slug>``.
+"""Fetch and condense a skill methodology with ``npx skills use <repo>@<slug>``.
 
-Owns the one ``subprocess``/``npx`` call site for content fetch — isolated from the classifier's
-CLI-gate subprocess and the candidate-discovery HTTP call, so a test patching this module's
-``subprocess`` can't silently affect either of the others.
+Owns the one ``subprocess``/``npx`` call site for content fetch. Tests can patch this module
+without affecting classifier or candidate HTTP calls.
 """
 
 from __future__ import annotations
@@ -24,18 +23,13 @@ _DESC_CAP = 300
 
 
 def _frontmatter_field(front: str, key: str) -> str:
-    """Single-line frontmatter value (fallback when the YAML parse fails)."""
+    """Return one frontmatter field when YAML parse fails."""
     m = re.search(rf"^{key}:\s*(.+?)\s*$", front, re.MULTILINE)
     return m.group(1).strip().strip('"').strip("'") if m else ""
 
 
 def _frontmatter_values(front: str) -> dict[str, str]:
-    """Parse SKILL.md frontmatter with real YAML.
-
-    Block scalars are common in skills (``description: >`` / ``|`` with the text on following
-    indented lines). A line-regex captures only the ``>``/``|`` marker, which surfaced in the
-    injected list as e.g. ``progress-report — >`` — losing the description entirely.
-    """
+    """Parse SKILL.md frontmatter with YAML."""
     try:
         import yaml
 
@@ -48,7 +42,7 @@ def _frontmatter_values(front: str) -> dict[str, str]:
 
 
 def _materialize_skill(body: str) -> str:
-    """Write a single-file skill's SKILL.md body to a temp file; return its path ("" on failure)."""
+    """Write a single-file skill body to a temp SKILL.md. Return its path, or ``""`` on failure."""
     try:
         d = tempfile.mkdtemp(prefix="agentnet-skill-")
         p = Path(d) / "SKILL.md"
@@ -59,13 +53,11 @@ def _materialize_skill(body: str) -> str:
 
 
 def summarize_skill(raw: str, *, slug: str, desc_hint: str) -> str:
-    """Condense ``skills use`` output to name + description + an on-disk ``SKILL.md`` path.
+    """Condense ``skills use`` output to name, description, and an on-disk SKILL.md path.
 
-    ``skills use`` prints the full SKILL.md; skills *with* reference files also download to a temp
-    dir. We inject only a concise header + a pointer to the skill on disk — the agent reads the full
-    methodology from disk — instead of dumping the whole SKILL.md into the hook block. When there's
-    a download dir we point at it (references included); otherwise we materialize the printed body
-    to a temp ``SKILL.md``. Returns "" if the body isn't parseable.
+    ``skills use`` prints the full SKILL.md. Skills with reference files also download to a temp
+    dir. Return a short header plus a disk pointer instead of dumping the full file. Return ``""``
+    when the body is not parseable.
     """
     body = _SKILL_MD_RE.search(raw)
     if not body:
@@ -91,8 +83,7 @@ def summarize_skill(raw: str, *, slug: str, desc_hint: str) -> str:
         skill_path = _materialize_skill(body.group(1))
         if not skill_path:
             return ""
-    # Never claim a path we haven't verified. Telling the agent a SKILL.md is "on disk" when it
-    # isn't makes it hunt for the file, fail, and abandon the skill entirely.
+    # Never claim a path we haven't verified. A missing file makes the agent abandon the skill.
     if not Path(skill_path).is_file():
         return ""
     header = f"{name} — {desc}" if desc else name
@@ -103,10 +94,10 @@ def summarize_skill(raw: str, *, slug: str, desc_hint: str) -> str:
 
 
 def skill_content(repo: str, slug: str, *, desc_hint: str, timeout: float) -> str:
-    """Fetch + condense a skill via ``npx skills use <repo>@<slug>`` (downloads, no repo install).
+    """Fetch and condense a skill with ``npx skills use <repo>@<slug>``.
 
-    Returns a concise "name — description + on-disk path" block on success, "" otherwise (no
-    ``npx``, bad slug → exit 1, timeout, or unparseable output).
+    Return a short name-description-path block on success. Return ``""`` when ``npx`` is missing,
+    the slug is bad, the call times out, or output is not parseable.
     """
     npx = shutil.which("npx")
     if not npx:
@@ -135,10 +126,9 @@ def skill_content(repo: str, slug: str, *, desc_hint: str, timeout: float) -> st
 def build_content_outcome(
     relevant: list[dict[str, str]], skills: dict[str, dict[str, str]], *, timeout: float
 ) -> str:
-    """Actionable phase-2 outcome: a concise pointer to the top relevant skill on disk, or "".
+    """Return phase-2 content for the top relevant skill on disk, or ``""``.
 
-    Injects a single skill — the first of the top ``CONTENT_ATTEMPTS`` relevant candidates whose
-    ``skills use`` fetch succeeds.
+    Try the first ``CONTENT_ATTEMPTS`` relevant candidates whose ``skills use`` fetch succeeds.
     """
     for s in relevant[: config.CONTENT_ATTEMPTS]:
         info = skills.get(s.get("name", ""))
