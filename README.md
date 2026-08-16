@@ -124,7 +124,7 @@ agentnet disconnect --all
 agentnet status
 ```
 
-`agentnet setup` opens Agent-net sign-in/sign-up in your browser. After login, the CLI stores credentials locally, creates a private AgentNet CLI identity, detects local agents, and configures every detected agent by default.
+`agentnet setup` opens Agent-net sign-in/sign-up in your browser. Before login, the CLI bootstraps a guest API token and claims it during authorize so your CLI identity elevates into your org. After login, the CLI stores credentials locally, creates a private AgentNet CLI identity, detects local agents, and configures every detected agent by default.
 
 ## Supported Agents
 

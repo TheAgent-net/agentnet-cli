@@ -110,8 +110,20 @@ class PlatformClient:
         )
         return self._handle_response(resp)
 
-    def cli_login_start(self) -> dict[str, Any]:
-        return self._public_post("/auth/cli/login/start")
+    def cli_bootstrap(self) -> dict[str, Any]:
+        """Mint a guest API token (pre-login) via ``POST /auth/cli/bootstrap``."""
+        return self._public_post("/auth/cli/bootstrap")
+
+    def cli_login_start(self, *, claim_api_token: str | None = None) -> dict[str, Any]:
+        """Start a CLI browser login flow.
+
+        Pass ``claim_api_token`` (guest bootstrap key) so authorize elevates
+        that agent into the user's org.
+        """
+        body: dict[str, Any] = {}
+        if claim_api_token:
+            body["claim_api_token"] = claim_api_token
+        return self._public_post("/auth/cli/login/start", body or None)
 
     def cli_login_poll(self, *, login_id: str, poll_secret: str) -> dict[str, Any]:
         _validate_path_segment(login_id)

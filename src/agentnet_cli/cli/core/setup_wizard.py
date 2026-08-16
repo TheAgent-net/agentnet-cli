@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ...infra.config import load_config
+from ...infra.credentials import ensure_guest_credentials, is_authenticated
 from ...infra.platform import resolve_platform_url
 from ...marketplace.client import PlatformClient
 from .connect import connect_command
@@ -37,50 +38,90 @@ def _send_telemetry(event_type: str, **metadata: str) -> None:
 
 
 def setup_command(platform_url: str | None = None, *, choose: bool = False) -> None:
-    _send_telemetry("cli_setup")
-    config = load_config()
-    if not config or not config.get("api_token"):
-        console.print()
-        console.print("  [bold]Step 1:[/bold] Sign in to AgentNet")
-        register_command(
-            platform_url=platform_url,
-            auto_agent_name=default_agent_name(),
-            auto_visibility="private",
-        )
-    else:
-        console.print()
-        console.print("  [green]✓[/green] Already signed in to AgentNet")
+    """Detect and connect harnesses first, then optionally sign in.
 
+    A guest API token is bootstrapped before connect so hooks work immediately.
+    Browser sign-in elevates that guest identity for higher rate limits.
+    """
+    _send_telemetry("cli_setup")
+
+    console.print()
+    console.print("  [bold]Step 1:[/bold] Prepare AgentNet credentials")
+    try:
+        cfg = ensure_guest_credentials(platform_url=platform_url)
+        if cfg.get("tier") == "guest":
+            console.print(
+                "  [green]✓[/green] Guest API token ready "
+                "[dim](hooks work now; sign in later for higher limits)[/dim]"
+            )
+        else:
+            console.print("  [green]✓[/green] Using existing AgentNet credentials")
+    except Exception as exc:
+        console.print(f"  [yellow]![/yellow] Could not bootstrap guest token: {exc}")
+        console.print("  [dim]Continuing — connect may still succeed locally.[/dim]")
+
+    console.print()
     console.print("  [bold]Step 2:[/bold] Detect local agents")
     results = detect_all()
     _print_detected_agents(results)
 
     targets = _available_targets(results)
+    configured: list[str] = []
     if not targets:
-        console.print("\n  [dim]All detected agents are already configured.[/dim]\n")
-        return
-
-    console.print()
-    if choose:
-        console.print(
-            f"  [bold]Step 3:[/bold] Choose agents to configure ({len(targets)} available)"
-        )
-        selected, connect_all = _select_targets(targets)
-        if not selected:
-            console.print("\n  [dim]No agents configured.[/dim]\n")
-            return
-        if connect_all:
+        console.print("\n  [dim]All detected agents are already configured.[/dim]")
+    else:
+        console.print()
+        if choose:
+            console.print(
+                f"  [bold]Step 3:[/bold] Choose agents to configure ({len(targets)} available)"
+            )
+            selected, connect_all = _select_targets(targets)
+            if not selected:
+                console.print("\n  [dim]No agents configured.[/dim]")
+            elif connect_all:
+                connect_command(connect_all=True)
+                configured = targets
+            else:
+                for agent_name in selected:
+                    connect_command(agent_name=agent_name)
+                configured = selected
+        else:
+            console.print(
+                f"  [bold]Step 3:[/bold] Configuring all detected agents ({len(targets)})"
+            )
             connect_command(connect_all=True)
-            return
-        for agent_name in selected:
-            connect_command(agent_name=agent_name)
+            configured = targets
+
+    _offer_sign_in(platform_url)
+
+    if configured:
+        _send_telemetry("cli_setup_complete", connectors=",".join(configured))
+
+
+def _offer_sign_in(platform_url: str | None) -> None:
+    """Optional browser sign-in after harnesses are wired."""
+    config = load_config()
+    console.print()
+    if is_authenticated(config=config):
+        console.print("  [green]✓[/green] Already signed in to AgentNet")
         return
 
+    console.print("  [bold]Step 4:[/bold] Sign in to AgentNet (optional)")
     console.print(
-        f"  [bold]Step 3:[/bold] Configuring all detected agents ({len(targets)})"
+        "  [dim]Guest hooks already work. Sign in to elevate your identity "
+        "and raise rate limits.[/dim]"
     )
-    connect_command(connect_all=True)
-    _send_telemetry("cli_setup_complete", connectors=",".join(targets))
+    if not typer.confirm("  Sign in now?", default=True):
+        console.print(
+            "  [dim]Skipped. Run [bold]agentnet register[/bold] later when you're ready.[/dim]\n"
+        )
+        return
+
+    register_command(
+        platform_url=platform_url,
+        auto_agent_name=default_agent_name(),
+        auto_visibility="private",
+    )
 
 
 def _available_targets(results) -> list[str]:
