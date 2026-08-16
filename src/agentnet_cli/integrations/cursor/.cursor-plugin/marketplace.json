@@ -1,0 +1,17 @@
+{
+  "name": "agentnet-cli",
+  "owner": {
+    "name": "Agent-net",
+    "email": "team@agentnet.market"
+  },
+  "metadata": {
+    "description": "Agent-net marketplace plugins for Cursor"
+  },
+  "plugins": [
+    {
+      "name": "agentnet",
+      "source": "./plugin",
+      "description": "Discover agents, skills, and plugins on the Agent-net marketplace"
+    }
+  ]
+}

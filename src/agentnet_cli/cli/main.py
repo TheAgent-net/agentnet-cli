@@ -13,7 +13,7 @@ from agentnet_cli.infra.platform import LOCAL_DEV_PLATFORM_URL, PRODUCTION_PLATF
 
 app = typer.Typer(
     name="agentnet",
-    help="Discover AI coding agents on your system and connect them to the Agent-net marketplace.",
+    help="Find AI coding agents on your system. Connect them to the Agent-net marketplace.",
     no_args_is_help=True,
 )
 console = Console()
@@ -21,6 +21,19 @@ console = Console()
 # Internal hook commands that run on the agent's critical path — the callback skips auto-update for
 # these so a tool call is never blocked; the detached worker handles it instead.
 _HOOK_COMMANDS = {"skill-hook", "cursor-hook", "hermes-hook"}
+
+
+def _configure_windows_stdio() -> None:
+    """Prefer UTF-8 on Windows so Rich glyphs (●/○/✓) do not crash cp1252 consoles."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:  # noqa: BLE001 — best-effort console setup
+                pass
 
 
 def _version_callback(value: bool) -> None:
@@ -40,7 +53,8 @@ def main(
         help=f"Use local platform ({LOCAL_DEV_PLATFORM_URL}) for this session",
     ),
 ) -> None:
-    """Discover AI coding agents on your system and connect them to the Agent-net marketplace."""
+    """Find AI coding agents on your system. Connect them to the Agent-net marketplace."""
+    _configure_windows_stdio()
     if dev:
         os.environ.setdefault("AGENTNET_ENV", "development")
 
@@ -64,12 +78,19 @@ def main(
 
 
 @app.command()
-def detect() -> None:
+def detect(
+    env: Optional[str] = typer.Option(
+        None, "--env", help="Scope to environment: local|windows|wsl[:distro]",
+    ),
+    no_mirror: bool = typer.Option(
+        False, "--no-mirror", help="Skip WSL/Windows auto-mirroring",
+    ),
+) -> None:
     """Scan your system for installed AI coding agents."""
     from .core.detect import detect_all
     from ..infra.paths import AgentName, agent_display_name, short_path
 
-    results = detect_all()
+    results = detect_all(env_filter=env, no_mirror=no_mirror)
     detected_count = sum(1 for r in results if r.detected)
     connected_count = sum(1 for r in results if r.already_connected)
     ready_count = sum(1 for r in results if r.detected and not r.already_connected)
@@ -79,6 +100,7 @@ def detect() -> None:
         show_header=True, header_style="bold dim",
     )
     table.add_column("Agent", min_width=18)
+    table.add_column("Environment", min_width=16)
     table.add_column("Status", min_width=14)
     table.add_column("Binary")
 
@@ -97,12 +119,12 @@ def detect() -> None:
 
         if r.binary_found:
             binary = f"[green]{short_path(r.binary_path)}[/green]"
-        elif r.detected:
+        elif r.detected and r.env_key == "local":
             binary = "[yellow]not in PATH[/yellow]"
         else:
             binary = "[dim]—[/dim]"
 
-        table.add_row(display, status, binary)
+        table.add_row(display, r.env_label, status, binary)
 
     console.print()
     console.print(table)
@@ -148,13 +170,19 @@ def setup(
     choose: bool = typer.Option(
         False,
         "--choose",
-        help="Interactively choose which detected agents to configure",
+        help="Choose which detected agents to configure",
+    ),
+    env: Optional[str] = typer.Option(
+        None, "--env", help="Scope to environment: local|windows|wsl[:distro]",
+    ),
+    no_mirror: bool = typer.Option(
+        False, "--no-mirror", help="Skip WSL/Windows auto-mirroring",
     ),
 ) -> None:
-    """Sign in and configure all detected agents (use --choose to pick individually)."""
+    """Configure detected agents, then optionally sign in. Use --choose to pick agents one by one."""
     from .core.setup_wizard import setup_command
 
-    setup_command(platform_url=url, choose=choose)
+    setup_command(platform_url=url, choose=choose, env_filter=env, no_mirror=no_mirror)
 
 
 @app.command()
@@ -163,30 +191,53 @@ def connect(
         None, help="Agent to connect (claude, cursor, copilot, vscode, codex, hermes, openclaw)",
     ),
     all_agents: bool = typer.Option(False, "--all", help="Connect all detected agents"),
+    env: Optional[str] = typer.Option(
+        None, "--env", help="Scope to environment: local|windows|wsl[:distro]",
+    ),
+    no_mirror: bool = typer.Option(
+        False, "--no-mirror", help="Skip WSL/Windows auto-mirroring",
+    ),
 ) -> None:
     """Connect an agent to the Agent-net marketplace via MCP."""
     from .core.connect import connect_command
 
-    connect_command(agent_name=agent, connect_all=all_agents)
+    connect_command(
+        agent_name=agent, connect_all=all_agents, env_filter=env, no_mirror=no_mirror,
+    )
 
 
 @app.command()
 def disconnect(
     agent: Optional[str] = typer.Argument(None, help="Agent to disconnect"),
     all_agents: bool = typer.Option(False, "--all", help="Disconnect all connected agents"),
+    env: Optional[str] = typer.Option(
+        None, "--env", help="Scope to environment: local|windows|wsl[:distro]",
+    ),
+    no_mirror: bool = typer.Option(
+        False, "--no-mirror", help="Skip WSL/Windows auto-mirroring",
+    ),
 ) -> None:
     """Remove an agent's connection to Agent-net."""
     from .core.disconnect import disconnect_command
 
-    disconnect_command(agent_name=agent, disconnect_all=all_agents)
+    disconnect_command(
+        agent_name=agent, disconnect_all=all_agents, env_filter=env, no_mirror=no_mirror,
+    )
 
 
 @app.command()
-def status() -> None:
+def status(
+    env: Optional[str] = typer.Option(
+        None, "--env", help="Scope to environment: local|windows|wsl[:distro]",
+    ),
+    no_mirror: bool = typer.Option(
+        False, "--no-mirror", help="Skip WSL/Windows auto-mirroring",
+    ),
+) -> None:
     """Show registration and agent connection status."""
     from .core.status import status_command
 
-    status_command()
+    status_command(env_filter=env, no_mirror=no_mirror)
 
 
 @app.command(name="set-path")
@@ -222,7 +273,7 @@ def set_path(
 def clear_path(
     agent: str = typer.Argument(help="Agent name to clear custom path for"),
 ) -> None:
-    """Remove a custom binary path and revert to auto-detection."""
+    """Remove a custom binary path. Use auto-detection again."""
     from ..infra.config import remove_agent_path
     from ..infra.paths import AgentName, agent_display_name
 
@@ -245,7 +296,7 @@ def update(
     background: bool = typer.Option(
         False,
         "--background",
-        help="Start upgrade in background (integrations refresh on next run)",
+        help="Start upgrade in the background. Integrations refresh on the next run.",
     ),
     refresh_only: bool = typer.Option(
         False,
@@ -312,9 +363,9 @@ def mcp_serve() -> None:
 
 @app.command(name="skill-hook", hidden=True)
 def skill_hook(
-    pre: bool = typer.Option(False, "--pre", help="UserPromptSubmit: spawn the discovery worker"),
-    peek: bool = typer.Option(False, "--peek", help="PostToolUse: steer the agent mid-flight"),
-    post: bool = typer.Option(False, "--post", help="Stop: fold in relevant AgentNet skills"),
+    pre: bool = typer.Option(False, "--pre", help="UserPromptSubmit: start the discovery worker"),
+    peek: bool = typer.Option(False, "--peek", help="PostToolUse: guide the agent during the turn"),
+    post: bool = typer.Option(False, "--post", help="Stop: add relevant AgentNet skills"),
     fetch: bool = typer.Option(False, "--fetch", help="Detached worker: discover + cache (internal)"),
     session: str = typer.Option("", "--session", help="Session id (worker)"),
     query: str = typer.Option("", "--query", help="Prompt text (worker)"),
@@ -323,14 +374,14 @@ def skill_hook(
         "claude", "--classifier", help="Gate CLI backend: claude | cursor (worker)",
     ),
     hook_timeout: float = typer.Option(
-        3.0, "--timeout", help="Max seconds a hook waits for the subagent's result",
+        3.0, "--timeout", help="Max seconds a hook waits for the subagent result",
     ),
 ) -> None:
-    """Claude Code every-prompt hooks — surface relevant AgentNet skills (internal).
+    """Claude Code hooks that show AgentNet skills (internal).
 
-    ``--pre`` (UserPromptSubmit) spawns a detached skill-scout worker; ``--peek`` (PostToolUse)
-    steers the agent mid-flight once the outcome is ready; ``--post`` (Stop) is the guaranteed
-    fallback. Best-effort: nothing/exit 0 on error.
+    ``--pre`` (UserPromptSubmit) starts a discovery worker. ``--peek`` (PostToolUse) guides
+    the agent when results are ready. ``--post`` (Stop) is the fallback. On error, exit 0
+    and do nothing.
     """
     from ..tools.claude_hook import run_claude_peek, run_claude_post, run_claude_pre
     from ..tools.skillfire import run_fetch
@@ -349,19 +400,19 @@ def skill_hook(
 
 @app.command(name="cursor-hook", hidden=True)
 def cursor_hook(
-    pre: bool = typer.Option(False, "--pre", help="beforeSubmitPrompt: spawn the discovery worker"),
-    peek: bool = typer.Option(False, "--peek", help="preToolUse: hard-nudge the agent (deny-once)"),
-    post: bool = typer.Option(False, "--post", help="stop: fold in relevant AgentNet skills"),
+    pre: bool = typer.Option(False, "--pre", help="beforeSubmitPrompt: start the discovery worker"),
+    peek: bool = typer.Option(False, "--peek", help="preToolUse: guide the agent (deny once)"),
+    post: bool = typer.Option(False, "--post", help="stop: add relevant AgentNet skills"),
     limit: int = typer.Option(6, "--limit", help="Max skills to suggest"),
     hook_timeout: float = typer.Option(
         3.0, "--timeout", help="Max seconds a hook waits for the worker's result",
     ),
 ) -> None:
-    """Cursor agent hooks — surface relevant AgentNet skills (internal).
+    """Cursor hooks that show AgentNet skills (internal).
 
-    ``--pre`` (beforeSubmitPrompt) spawns the shared discovery worker; ``--peek`` (preToolUse)
-    hard-nudges by denying the first tool call once and feeding the skill to the agent; ``--post``
-    (stop) is the followup fallback. Best-effort: nothing/exit 0 on error.
+    ``--pre`` (beforeSubmitPrompt) starts the discovery worker. ``--peek`` (preToolUse) blocks
+    the first tool call once and sends the skill to the agent. ``--post`` (stop) is the
+    fallback. On error, exit 0 and do nothing.
     """
     from ..tools.cursor_hook import run_cursor_peek, run_cursor_post, run_cursor_pre
 
@@ -375,19 +426,19 @@ def cursor_hook(
 
 @app.command(name="hermes-hook", hidden=True)
 def hermes_hook(
-    pre: bool = typer.Option(False, "--pre", help="pre_llm_call: spawn the discovery worker"),
-    peek: bool = typer.Option(False, "--peek", help="pre_tool_call: hard-nudge the agent"),
-    post: bool = typer.Option(False, "--post", help="pre_verify: keep the turn going (fallback)"),
+    pre: bool = typer.Option(False, "--pre", help="pre_llm_call: start the discovery worker"),
+    peek: bool = typer.Option(False, "--peek", help="pre_tool_call: guide the agent"),
+    post: bool = typer.Option(False, "--post", help="pre_verify: continue the turn (fallback)"),
     limit: int = typer.Option(6, "--limit", help="Max skills to suggest"),
     hook_timeout: float = typer.Option(
         3.0, "--timeout", help="Max seconds a hook waits for the worker's result",
     ),
 ) -> None:
-    """Hermes shell hooks — surface relevant AgentNet skills (internal).
+    """Hermes shell hooks that show AgentNet skills (internal).
 
-    ``--pre`` (pre_llm_call) spawns the shared discovery worker; ``--peek`` (pre_tool_call) blocks
-    one tool call and hands the skill back to the model; ``--post`` (pre_verify) keeps the turn
-    going as a fallback. Best-effort: ``{}``/exit 0 on error.
+    ``--pre`` (pre_llm_call) starts the discovery worker. ``--peek`` (pre_tool_call) blocks one
+    tool call and returns the skill to the model. ``--post`` (pre_verify) continues the turn as
+    a fallback. On error, return ``{}`` and exit 0.
     """
     from ..tools.hermes_hook import run_hermes_peek, run_hermes_post, run_hermes_pre
 
@@ -403,7 +454,7 @@ def hermes_hook(
 def enable_skill_fire(
     remove: bool = typer.Option(False, "--remove", help="Remove the hook instead of installing"),
 ) -> None:
-    """Fire AgentNet on every Claude Code prompt (writes ~/.claude/settings.json)."""
+    """Run AgentNet on every Claude Code prompt. Writes ~/.claude/settings.json."""
     from ..connectors.claude_search_hook import SettingsHookError, install, uninstall
 
     try:

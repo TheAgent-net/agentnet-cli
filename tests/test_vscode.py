@@ -43,6 +43,31 @@ def test_connect_writes_mcp_json(fake_home, monkeypatch):
     assert "agentnet" in data["servers"]
 
 
+def test_connect_tolerates_empty_mcp_json(fake_home, monkeypatch):
+    """Fresh VS Code installs often leave an empty mcp.json — must not crash."""
+    _setup_vscode(fake_home)
+    user_dir = fake_home / "Library" / "Application Support" / "Code" / "User"
+    user_dir.mkdir(parents=True)
+    (user_dir / "mcp.json").write_text("", encoding="utf-8")
+    monkeypatch.setattr("agentnet_cli.connectors.vscode._vscode_user_dirs", lambda: [user_dir])
+    result = VSCodeConnector().connect({"api_token": "t", "platform_url": "https://x"})
+    assert result.success
+    data = json.loads((user_dir / "mcp.json").read_text(encoding="utf-8"))
+    assert "agentnet" in data["servers"]
+
+
+def test_connect_tolerates_invalid_mcp_json(fake_home, monkeypatch):
+    _setup_vscode(fake_home)
+    user_dir = fake_home / "Library" / "Application Support" / "Code" / "User"
+    user_dir.mkdir(parents=True)
+    (user_dir / "mcp.json").write_text("{not-json", encoding="utf-8")
+    monkeypatch.setattr("agentnet_cli.connectors.vscode._vscode_user_dirs", lambda: [user_dir])
+    result = VSCodeConnector().connect({"api_token": "t", "platform_url": "https://x"})
+    assert result.success
+    data = json.loads((user_dir / "mcp.json").read_text(encoding="utf-8"))
+    assert "agentnet" in data["servers"]
+
+
 def test_disconnect_removes_files(fake_home, monkeypatch):
     _setup_vscode(fake_home)
     user_dir = fake_home / "Library" / "Application Support" / "Code" / "User"

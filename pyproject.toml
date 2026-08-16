@@ -1,9 +1,9 @@
 [project]
 name = "agentnet-cli"
-version = "0.4.0"
+version = "0.4.1"
 description = "Detect AI agents and connect them to the Agent-net marketplace"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 keywords = ["ai", "agents", "marketplace", "mcp", "a2a"]
 classifiers = [
@@ -12,7 +12,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -24,7 +23,6 @@ dependencies = [
     "rich>=13.0",
     "httpx>=0.27",
     "tomli-w>=1.0",
-    "tomli>=2.0; python_version < '3.11'",
     "pyyaml>=6.0",
 ]
 
@@ -37,7 +35,7 @@ Issues = "https://github.com/TheAgent-net/agentnet-cli/issues"
 agentnet = "agentnet_cli.cli.main:app"
 
 [project.entry-points."hermes_agent.plugins"]
-agentnet = "agentnet_cli.tools.hermes"
+agentnet = "agentnet_cli.integrations.hermes"
 
 [build-system]
 requires = ["hatchling"]
@@ -50,7 +48,7 @@ packages = ["src/agentnet_cli"]
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
 

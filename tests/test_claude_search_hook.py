@@ -22,9 +22,10 @@ def test_install_writes_all_three_hooks(fake_home):
     changed, _ = h.install()
     assert changed
     data = json.loads(_settings(fake_home).read_text())
-    assert _cmd(data, "UserPromptSubmit") == "agentnet skill-hook --pre"
-    assert _cmd(data, "PostToolUse") == "agentnet skill-hook --peek"
-    assert _cmd(data, "Stop") == "agentnet skill-hook --post"
+    assert h._is_agentnet_cmd(_cmd(data, "UserPromptSubmit"))
+    assert "skill-hook --pre" in _cmd(data, "UserPromptSubmit")
+    assert "skill-hook --peek" in _cmd(data, "PostToolUse")
+    assert "skill-hook --post" in _cmd(data, "Stop")
     # UserPromptSubmit/Stop are not tool-scoped -> no matcher; PostToolUse is -> "*"
     assert "matcher" not in data["hooks"]["UserPromptSubmit"][0]
     assert "matcher" not in data["hooks"]["Stop"][0]
@@ -129,7 +130,7 @@ def test_install_preserves_event_stored_as_object(fake_home):
     assert isinstance(post, list)
     cmds = [b.get("hooks", [{}])[0].get("command") for b in post]
     assert "user-thing" in cmds  # the user's object block was wrapped + kept
-    assert "agentnet skill-hook --peek" in cmds  # ours appended
+    assert any(h._is_agentnet_cmd(c) and "skill-hook --peek" in c for c in cmds)
 
 
 def test_install_skips_event_with_scalar_value(fake_home):
@@ -139,4 +140,4 @@ def test_install_skips_event_with_scalar_value(fake_home):
     h.install()
     data = json.loads(p.read_text())
     assert data["hooks"]["Stop"] == "weird"  # scalar left untouched
-    assert _cmd(data, "UserPromptSubmit") == "agentnet skill-hook --pre"  # others still installed
+    assert "skill-hook --pre" in _cmd(data, "UserPromptSubmit")

@@ -1,22 +1,16 @@
-"""Cursor agent hooks — surface relevant AgentNet skills, reusing the shared skillfire pipeline.
+"""Cursor agent hooks — surface relevant AgentNet skills with the shared skillfire pipeline.
 
-Cursor's hooks (``~/.cursor/hooks.json``) mirror the Claude three-event flow, but the injection
-primitives differ, so only the thin I/O adapter changes — the worker, session cache, and atomic
-once-claims are shared verbatim via the :mod:`agentnet_cli.tools.skillfire` port.
+Cursor hooks in ``~/.cursor/hooks.json`` mirror the Claude three-event flow. Only the I/O adapter
+changes. The worker, session cache, and once-claims come from :mod:`agentnet_cli.tools.skillfire`.
 
 - **beforeSubmitPrompt** -> ``cursor-hook --pre``: spawn the detached worker, then allow the
-  prompt (``{"continue": true}``). This event can only allow/block — it cannot inject — so it is
-  spawn-only, exactly like the Claude ``--pre``.
-- **preToolUse** -> ``cursor-hook --peek``: the **hard nudge**. Cursor's only forceful steer is a
-  denied action, so once the worker's outcome is ready we deny the first tool call *once*
-  (``{"permission": "deny", "agent_message": …}``) — the agent must read + apply the skill, then
-  retry. Deny-once via the shared emit claim; every later call is allowed (no output).
-- **stop** -> ``cursor-hook --post``: guaranteed fallback for no-tool answers via
-  ``followup_message`` (auto-submitted as the next user turn). The message is ``[AgentNet]``-tagged
-  so the re-fired ``--pre`` recognises its own injection and does not loop.
+  prompt (``{"continue": true}``). This event cannot inject, so it is spawn-only.
+- **preToolUse** -> ``cursor-hook --peek``: deny the first tool call once when the outcome is
+  ready (``{"permission": "deny", "agent_message": …}``). Later calls are allowed.
+- **stop** -> ``cursor-hook --post``: fallback for no-tool answers with a ``[AgentNet]``-tagged
+  ``followup_message``. The re-fired ``--pre`` recognizes the tag and does not loop.
 
-Session key is Cursor's ``conversation_id`` (present on all three events). Best-effort throughout:
-any missing field / not-ready cache degrades to allowing the action untouched.
+Session key is Cursor's ``conversation_id``. Missing fields or a not-ready cache allow the action.
 """
 
 from __future__ import annotations
@@ -29,19 +23,20 @@ from . import skillfire
 
 
 def _session(event: dict) -> str:
+    """Return the conversation id from a Cursor hook event."""
     return str(event.get("conversation_id") or "")
 
 
 def _emit(obj: dict) -> None:
+    """Write one JSON response to stdout."""
     sys.stdout.write(json.dumps(obj))
     sys.stdout.flush()
 
 
 def run_cursor_pre(*, limit: int, timeout: float) -> None:
-    """beforeSubmitPrompt: spawn the detached worker, then allow the prompt.
+    """Handle beforeSubmitPrompt: spawn the detached worker, then allow the prompt.
 
-    Spawn-once per (conversation, prompt) so duplicate registrations spawn one worker; skips our
-    own ``[AgentNet]`` stop-followup so the fallback can't loop.
+    Spawn once per (conversation, prompt). Skip ``[AgentNet]`` followups so fallback cannot loop.
     """
     if os.environ.get(skillfire.SUBAGENT_ENV):
         _emit({"continue": True})
@@ -60,11 +55,9 @@ def run_cursor_pre(*, limit: int, timeout: float) -> None:
 
 
 def run_cursor_peek(*, limit: int, timeout: float) -> None:
-    """preToolUse: hard nudge — deny the first tool call once and feed the skill to the agent.
+    """Handle preToolUse: deny the first tool call once and feed the skill to the agent.
 
-    No output (exit 0) allows the action. We only deny when the outcome is ready, actionable, and
-    the shared emit claim is still open, so exactly one tool call is denied; the agent reads +
-    applies the skill and retries, and the retry is allowed.
+    No output allows the action. Deny only when the outcome is ready, actionable, and unclaimed.
     """
     if os.environ.get(skillfire.SUBAGENT_ENV):
         return
@@ -84,10 +77,9 @@ def run_cursor_peek(*, limit: int, timeout: float) -> None:
 
 
 def run_cursor_post(*, limit: int, timeout: float) -> None:
-    """stop: fallback surface for no-tool answers via a ``[AgentNet]``-tagged followup message.
+    """Handle stop: fallback for no-tool answers with a ``[AgentNet]`` followup message.
 
-    Fires only when nothing already steered (the shared emit claim), so a tool-using task that was
-    hard-nudged mid-run won't also get a followup.
+    Fire only when nothing already steered mid-flight.
     """
     if os.environ.get(skillfire.SUBAGENT_ENV):
         return

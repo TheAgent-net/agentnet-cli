@@ -1,1 +1,1 @@
-"""Marketplace discovery commands (JSON output)."""
+"""Marketplace discovery commands. Output is JSON."""
