@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,7 @@ def record_connection(
 
     m = load_manifest()
     m["connections"][agent_name] = {
-        "connected_at": datetime.now(UTC).isoformat(),
+        "connected_at": datetime.now(timezone.utc).isoformat(),
         "cli_version": __version__,
         "files_created": [str(p) for p in files_created],
         "files_modified": [
@@ -83,7 +83,7 @@ def get_last_update_check_at() -> datetime | None:
 def record_update_check(*, upgraded_to: str | None = None) -> None:
     """Record that an update check ran. Optionally record the new version."""
     m = load_manifest()
-    m["last_update_check_at"] = datetime.now(UTC).isoformat()
+    m["last_update_check_at"] = datetime.now(timezone.utc).isoformat()
     if upgraded_to:
         m["last_upgrade_version"] = upgraded_to
     save_manifest(m)
@@ -94,5 +94,5 @@ def should_check_for_update(interval_hours: float) -> bool:
     last = get_last_update_check_at()
     if last is None:
         return True
-    elapsed = datetime.now(UTC) - last.astimezone(UTC)
+    elapsed = datetime.now(timezone.utc) - last.astimezone(timezone.utc)
     return elapsed.total_seconds() >= interval_hours * 3600

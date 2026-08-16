@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,8 +13,12 @@ if TYPE_CHECKING:
     from .environments import Environment
 
 
-class AgentName(StrEnum):
-    """Known agent harness names."""
+class AgentName(str, Enum):
+    """Known agent harness names.
+
+    Uses ``(str, Enum)`` rather than ``enum.StrEnum`` so the CLI stays
+    importable on Python 3.10 (``StrEnum`` is 3.11+).
+    """
 
     CLAUDE = "claude"
     CURSOR = "cursor"

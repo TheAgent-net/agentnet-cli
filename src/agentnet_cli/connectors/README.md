@@ -24,7 +24,7 @@ class AgentConnector(ABC):
 
 1. Create `agents/<name>.py` implementing `AgentConnector`
 2. Add the agent to `paths.py`:
-   - Add to `AgentName(StrEnum)`
+   - Add to `AgentName(str, Enum)`
    - Add to `_AGENT_DOT_DIRS` mapping
 3. Create shim templates in `shims/<name>/`
 4. Wire into `registry.py` `_CONNECTORS` dict
