@@ -63,12 +63,21 @@ def agent_config_root(agent: AgentName, env: Environment | None = None) -> Path:
         env = local_environment()
 
     if agent == AgentName.CLAUDE:
-        if env.kind == "local" and sys.platform == "win32":
-            appdata = os.environ.get("APPDATA", "")
-            if appdata:
-                return Path(appdata) / "Claude"
         if env.kind == "windows":
             return env.home / "AppData" / "Roaming" / "Claude"
+        if env.kind == "local" and sys.platform == "win32":
+            # Native Claude on Windows lives under %APPDATA%\Claude. Only use
+            # that when APPDATA belongs to this env's home — otherwise tests
+            # (and custom homes) would leak into the real user profile.
+            appdata = os.environ.get("APPDATA", "")
+            if appdata:
+                appdata_path = Path(appdata)
+                try:
+                    appdata_path.resolve().relative_to(env.home.resolve())
+                except ValueError:
+                    pass
+                else:
+                    return appdata_path / "Claude"
 
     return env.home / _AGENT_DOT_DIRS[agent]
 

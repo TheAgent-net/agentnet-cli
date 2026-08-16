@@ -39,13 +39,9 @@ def _load(path) -> dict[str, Any]:
 
 
 def _is_agentnet_cmd(cmd: Any) -> bool:
-    if not isinstance(cmd, str):
-        return False
-    parts = cmd.split()
-    if len(parts) < 2:
-        return False
-    exe = parts[0].rsplit("/", 1)[-1]
-    return exe == "agentnet" and parts[1] == "cursor-hook"
+    from ..infra.proc import is_agentnet_subcommand  # noqa: PLC0415
+
+    return is_agentnet_subcommand(cmd, "cursor-hook")
 
 
 def _event_has_agentnet(entries: list[Any]) -> bool:

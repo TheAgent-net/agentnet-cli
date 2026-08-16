@@ -53,7 +53,9 @@ def _load(path) -> dict[str, Any]:
 
 
 def _is_agentnet_cmd(cmd: Any) -> bool:
-    return isinstance(cmd, str) and cmd.startswith("agentnet skill-hook")
+    from ..infra.proc import is_agentnet_subcommand  # noqa: PLC0415
+
+    return is_agentnet_subcommand(cmd, "skill-hook")
 
 
 def _block(command: str, matcher: str | None) -> dict[str, Any]:
