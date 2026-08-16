@@ -9,7 +9,27 @@ def test_agentnet_home_returns_dot_agentnet(tmp_path, monkeypatch):
 
 def test_claude_config_root(tmp_path, monkeypatch):
     monkeypatch.setattr("agentnet_cli.infra.paths.Path.home", lambda: tmp_path)
+    # Host APPDATA (common on Windows CI) must not override a patched home.
+    monkeypatch.setenv("APPDATA", str(Path.cwd() / "unrelated-AppData"))
     assert agent_config_root(AgentName.CLAUDE) == tmp_path / ".claude"
+
+
+def test_claude_config_root_uses_appdata_when_under_home(tmp_path, monkeypatch):
+    monkeypatch.setattr("agentnet_cli.infra.paths.Path.home", lambda: tmp_path)
+    monkeypatch.setattr("agentnet_cli.infra.paths.sys.platform", "win32")
+    appdata = tmp_path / "AppData" / "Roaming"
+    appdata.mkdir(parents=True)
+    monkeypatch.setenv("APPDATA", str(appdata))
+    assert agent_config_root(AgentName.CLAUDE) == appdata / "Claude"
+
+
+def test_claude_config_root_mirrored_windows(tmp_path):
+    from agentnet_cli.infra.environments import Environment
+
+    win_home = tmp_path / "Users" / "testuser"
+    (win_home / "AppData" / "Roaming").mkdir(parents=True)
+    env = Environment(kind="windows", label="Windows", home=win_home, distro="Ubuntu")
+    assert agent_config_root(AgentName.CLAUDE, env) == win_home / "AppData" / "Roaming" / "Claude"
 
 
 def test_cursor_config_root(tmp_path, monkeypatch):

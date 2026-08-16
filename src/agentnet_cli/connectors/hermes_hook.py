@@ -75,19 +75,16 @@ def _load_yaml(path) -> dict[str, Any]:
 def _is_agentnet_cmd(cmd: Any) -> bool:
     """True only for *our* hook command.
 
-    Parsed rather than substring-matched: the command may be bare (``agentnet hermes-hook …``) or
-    absolute (``/usr/local/bin/agentnet hermes-hook …``) depending on what ``which`` resolved at
-    install time, but a substring test would also claim an unrelated user hook that merely mentions
-    it (e.g. ``/opt/wrapper.sh --run "agentnet hermes-hook --pre"``) — install would replace it and
+    Parsed rather than substring-matched: the command may be bare (``agentnet hermes-hook …``),
+    absolute (``/usr/local/bin/agentnet hermes-hook …``), or Windows-style
+    (``C:\\…\\agentnet.EXE hermes-hook …``) depending on what ``which`` resolved at install time.
+    A substring test would also claim an unrelated user hook that merely mentions it
+    (e.g. ``/opt/wrapper.sh --run "agentnet hermes-hook --pre"``) — install would replace it and
     uninstall would revoke its consent.
     """
-    if not isinstance(cmd, str):
-        return False
-    parts = cmd.split()
-    if len(parts) < 2:
-        return False
-    exe = parts[0].rsplit("/", 1)[-1]
-    return exe == "agentnet" and parts[1] == "hermes-hook"
+    from ..infra.proc import is_agentnet_subcommand  # noqa: PLC0415
+
+    return is_agentnet_subcommand(cmd, "hermes-hook")
 
 
 def _event_has_agentnet(entries: list[Any]) -> bool:

@@ -8,10 +8,12 @@ def test_empty_manifest_when_missing(fake_home):
 
 
 def test_record_connection(fake_home):
-    record_connection("claude", files_created=[Path("/a/b.md")], files_modified=[], mcp_entry={"scope": "user"})
+    created = Path("/a/b.md")
+    record_connection("claude", files_created=[created], files_modified=[], mcp_entry={"scope": "user"})
     m = load_manifest()
     assert "claude" in m["connections"]
-    assert m["connections"]["claude"]["files_created"] == ["/a/b.md"]
+    # Path("/a/b.md") stringifies with native separators (\\ on Windows).
+    assert m["connections"]["claude"]["files_created"] == [str(created)]
 
 
 def test_remove_connection(fake_home):

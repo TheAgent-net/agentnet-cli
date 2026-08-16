@@ -237,6 +237,7 @@ def test_connector_only_claims_its_own_command():
     # would otherwise be replaced on install and have its consent revoked on uninstall.
     assert conn._is_agentnet_cmd("agentnet hermes-hook --pre")
     assert conn._is_agentnet_cmd("/usr/local/bin/agentnet hermes-hook --peek")  # absolute path
+    assert conn._is_agentnet_cmd(r"C:\Users\x\.local\bin\agentnet.EXE hermes-hook --pre")
     assert not conn._is_agentnet_cmd('/opt/wrapper.sh --run "agentnet hermes-hook --pre"')
     assert not conn._is_agentnet_cmd("agentnet-helper hermes-hook --pre")  # different binary
     assert not conn._is_agentnet_cmd("agentnet skill-hook --pre")  # the Claude hook, not ours

@@ -75,7 +75,8 @@ def test_binary_found_when_on_path(fake_home):
         results = detect_all()
     by_name = {r.agent_name: r for r in results}
     assert by_name[AgentName.CLAUDE].binary_found is True
-    assert str(by_name[AgentName.CLAUDE].binary_path) == "/usr/local/bin/claude"
+    # Compare Path objects so Windows separator normalization does not break the assert.
+    assert by_name[AgentName.CLAUDE].binary_path == Path("/usr/local/bin/claude")
 
 
 def test_binary_not_found(fake_home):

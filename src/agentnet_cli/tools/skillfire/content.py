@@ -53,7 +53,8 @@ def _materialize_skill(body: str) -> str:
         d = tempfile.mkdtemp(prefix="agentnet-skill-")
         p = Path(d) / "SKILL.md"
         p.write_text(body)
-        return str(p)
+        # Forward slashes so injected paths are stable across platforms (and for agents).
+        return p.as_posix()
     except Exception:  # noqa: BLE001
         return ""
 

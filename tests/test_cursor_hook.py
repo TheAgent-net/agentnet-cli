@@ -185,6 +185,7 @@ def test_connector_only_claims_its_own_command():
     # Parsed ownership, not a prefix: never swallow an unrelated user hook on install/uninstall.
     assert conn._is_agentnet_cmd("agentnet cursor-hook --pre")
     assert conn._is_agentnet_cmd("/usr/local/bin/agentnet cursor-hook --peek")
+    assert conn._is_agentnet_cmd(r"C:\Users\x\.local\bin\agentnet.EXE cursor-hook --pre")
     assert not conn._is_agentnet_cmd("agentnet cursor-hook-wrapper --pre")  # different sub-command
     assert not conn._is_agentnet_cmd("agentnet-helper cursor-hook --pre")  # different binary
     assert not conn._is_agentnet_cmd("agentnet skill-hook --pre")  # the Claude hook, not ours
