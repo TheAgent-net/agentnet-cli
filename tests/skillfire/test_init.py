@@ -3,7 +3,6 @@ check_fallback) — this logic used to be hand-rolled in each adapter; now it's 
 each adapter calls through the port, so it needs its own coverage independent of any adapter."""
 
 import json
-from unittest.mock import MagicMock
 
 from agentnet_cli.tools import skillfire
 from agentnet_cli.tools.skillfire import render, session
@@ -16,11 +15,14 @@ def _cache(outcome, final=True):
 # ── spawn_worker ───────────────────────────────────────────────────────────────
 def test_spawn_worker_claims_and_launches(tmp_path, monkeypatch):
     monkeypatch.setattr("agentnet_cli.tools.skillfire.session.cache_path", lambda s: tmp_path / "s.json")
-    monkeypatch.setattr("agentnet_cli.tools.skillfire.worker.shutil.which", lambda n: "/usr/bin/agentnet")
+    monkeypatch.setattr(
+        "agentnet_cli.tools.skillfire.worker.agentnet_invocation",
+        lambda: ["/usr/bin/agentnet"],
+    )
     captured = {}
     monkeypatch.setattr(
-        "agentnet_cli.tools.skillfire.worker.subprocess.Popen",
-        lambda args, **kw: captured.setdefault("args", args) or MagicMock(),
+        "agentnet_cli.tools.skillfire.worker.start_detached_process",
+        lambda args: captured.setdefault("args", args),
     )
     skillfire.spawn_worker("s1", "add jwt auth", limit=5, timeout=3.0, classifier="cursor")
     args = captured["args"]
@@ -32,11 +34,14 @@ def test_spawn_worker_claims_and_launches(tmp_path, monkeypatch):
 def test_spawn_worker_skips_duplicate_claim(tmp_path, monkeypatch):
     # A prior call already claimed the spawn marker for this (session, prompt) -> no second launch.
     monkeypatch.setattr("agentnet_cli.tools.skillfire.session.cache_path", lambda s: tmp_path / "s.json")
-    monkeypatch.setattr("agentnet_cli.tools.skillfire.worker.shutil.which", lambda n: "/usr/bin/agentnet")
+    monkeypatch.setattr(
+        "agentnet_cli.tools.skillfire.worker.agentnet_invocation",
+        lambda: ["/usr/bin/agentnet"],
+    )
     launches = []
     monkeypatch.setattr(
-        "agentnet_cli.tools.skillfire.worker.subprocess.Popen",
-        lambda args, **kw: launches.append(args) or MagicMock(),
+        "agentnet_cli.tools.skillfire.worker.start_detached_process",
+        lambda args: launches.append(args),
     )
     for _ in range(2):
         skillfire.spawn_worker("s1", "same prompt", limit=5, timeout=3.0, classifier="claude")

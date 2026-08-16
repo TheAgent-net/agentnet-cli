@@ -1,18 +1,13 @@
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from agentnet_cli.tools.skillfire import broker, config
+from agentnet_cli.tools.skillfire import broker
 
-_CREDS = "agentnet_cli.tools.skillfire.config.resolve_credentials"
-_USE_AGENT = "agentnet_cli.marketplace.client.PlatformClient.use_agent"
-_REPORT = "agentnet_cli.marketplace.client.PlatformClient.report_skill_recommendation"
+_MAKE = "agentnet_cli.infra.credentials.make_platform_client"
 
 
 class _ImmediateThread:
-    """Runs the target synchronously instead of on a real thread, so tests can observe
-    report_recommendation's effect deterministically without a join()/race condition — while still
-    exercising the real (non-mocked) report_recommendation, which now dispatches to threading.Thread
-    precisely so it can never block the caller (see test_report_recommendation_does_not_block)."""
+    """Run the target on the same thread so tests can check the result."""
 
     def __init__(self, target=None, args=(), kwargs=None, daemon=None):
         self._target = target
@@ -27,120 +22,82 @@ def _sync_thread():
     return patch("agentnet_cli.tools.skillfire.broker.threading.Thread", _ImmediateThread)
 
 
-# ── negotiate_via_platform (brokered A2A via use_agent) ──────────────────────
-def test_negotiate_via_platform_happy():
-    with (
-        patch(_CREDS, return_value=("t", "https://p")),
-        patch(_USE_AGENT, return_value={"status": "settled", "agent_response": "Use skills/foo"}),
+def test_upgrade_outcome_uses_content():
+    with patch(
+        "agentnet_cli.tools.skillfire.content.build_content_outcome",
+        return_value="CONTENT",
     ):
-        assert broker.negotiate_via_platform("q", timeout=5.0) == "Use skills/foo"
+        assert broker.upgrade_outcome("q", [{"name": "A", "why": "w"}], {}, timeout=5) == "CONTENT"
 
 
-def test_negotiate_via_platform_best_effort():
-    with patch(_CREDS, return_value=None):
-        assert broker.negotiate_via_platform("q", timeout=5.0) == ""  # no identity
-    with (
-        patch(_CREDS, return_value=("t", "https://p")),
-        patch(_USE_AGENT, side_effect=RuntimeError("boom")),
+def test_upgrade_outcome_empty_without_content():
+    with patch(
+        "agentnet_cli.tools.skillfire.content.build_content_outcome",
+        return_value="",
     ):
-        assert broker.negotiate_via_platform("q", timeout=5.0) == ""  # platform error
-    with (
-        patch(_CREDS, return_value=("t", "https://p")),
-        patch(_USE_AGENT, return_value={"status": "settled"}),
-    ):
-        assert broker.negotiate_via_platform("q", timeout=5.0) == ""  # no agent_response
-    with (
-        patch(_CREDS, return_value=("t", "https://p")),
-        patch(_USE_AGENT, return_value={"status": "refunded",
-                                        "agent_response": "agent turn exceeded 25s budget"}),
-    ):
-        assert broker.negotiate_via_platform("q", timeout=5.0) == ""  # failed turn not injected
+        assert broker.upgrade_outcome("q", [{"name": "A", "why": "w"}], {}, timeout=5) == ""
 
 
-def test_skills_agent_id_default_and_override(monkeypatch):
-    monkeypatch.delenv("AGENTNET_SKILLS_AGENT_ID", raising=False)
-    with patch("agentnet_cli.infra.config.load_config", return_value=None):
-        assert broker.skills_agent_id() == config.SKILLS_AGENT_ID_DEFAULT == "agentnet-skills-agent"
-    monkeypatch.setenv("AGENTNET_SKILLS_AGENT_ID", "other-agent")
-    assert broker.skills_agent_id() == "other-agent"
-
-
-def test_broker_fallback_is_labelled_as_not_on_disk(monkeypatch):
-    # The Skills Agent cites conventional install paths for skills that were never installed here.
-    monkeypatch.setattr(
-        "agentnet_cli.tools.skillfire.content.build_content_outcome", lambda *a, **k: ""
-    )
-    monkeypatch.setattr(
-        "agentnet_cli.tools.skillfire.broker.negotiate_via_platform",
-        lambda *a, **k: "Use ~/.agentnet/skills/foo/bar/SKILL.md",
-    )
-    out = broker.upgrade_outcome("q", [{"name": "A", "why": "w"}], {}, timeout=5)
-    assert "do not look for these files on disk" in out
-    assert "Skills Agent" in out
-
-
-# ── report_recommendation (usage telemetry: which skills were recommended) ───
 _SKILLS = {"A": {"repo": "r/a", "desc": "does a", "score": "88"}, "B": {"score": "50"}}
 _RELEVANT = [{"name": "A", "why": "helps with a"}, {"name": "B", "why": ""}]
 
 
-def test_report_recommendation_builds_payload_and_forwards_context():
-    with patch(_CREDS, return_value=("t", "https://p")), patch(_REPORT) as report, _sync_thread():
-        broker.report_recommendation(
-            "review my code", _RELEVANT, _SKILLS,
-            harness="hermes", session="s1", classifier_model="m", model="m",
+def test_send_recommendation_builds_payload_and_forwards_context():
+    platform = MagicMock()
+    with patch(_MAKE, return_value=platform), _sync_thread():
+        broker.send_recommendation(
+            "review my code",
+            _RELEVANT,
+            _SKILLS,
+            harness="hermes",
+            session="s1",
+            classifier_model="m",
+            model="m",
         )
-    report.assert_called_once()
-    kwargs = report.call_args.kwargs
+    platform.send_skill_recommendation.assert_called_once()
+    kwargs = platform.send_skill_recommendation.call_args.kwargs
     assert kwargs["use_case"] == "review my code"
     assert kwargs["recommended"] == [
         {"name": "A", "why": "helps with a", "score": "88"},
-        {"name": "B", "why": "", "score": "50"},  # why falls back to "" (no desc on B either)
+        {"name": "B", "why": "", "score": "50"},
     ]
     assert kwargs["harness"] == "hermes"
     assert kwargs["session"] == "s1"
     assert kwargs["classifier_model"] == "m"
     assert kwargs["model"] == "m"
+    platform.close.assert_called_once()
 
 
-def test_report_recommendation_why_falls_back_to_desc():
+def test_send_recommendation_why_falls_back_to_desc():
     skills = {"A": {"desc": "does a", "score": "88"}}
-    with patch(_CREDS, return_value=("t", "https://p")), patch(_REPORT) as report, _sync_thread():
-        broker.report_recommendation("q", [{"name": "A", "why": ""}], skills)
-    assert report.call_args.kwargs["recommended"] == [
+    platform = MagicMock()
+    with patch(_MAKE, return_value=platform), _sync_thread():
+        broker.send_recommendation("q", [{"name": "A", "why": ""}], skills)
+    assert platform.send_skill_recommendation.call_args.kwargs["recommended"] == [
         {"name": "A", "why": "does a", "score": "88"}
     ]
 
 
-def test_report_recommendation_noops_without_credentials():
-    # No credentials -> the sync helper returns immediately without even starting a thread's worth
-    # of work; still runs on the real (non-faked) threading.Thread here since there's nothing for
-    # the fake to race against.
-    with patch(_CREDS, return_value=None), patch(_REPORT) as report:
-        broker.report_recommendation("q", _RELEVANT, _SKILLS)
-        time.sleep(0.05)  # let the (real) background thread reach the credentials check
-    report.assert_not_called()
+def test_send_recommendation_noops_without_credentials():
+    with patch(_MAKE, return_value=None), _sync_thread():
+        broker.send_recommendation("q", _RELEVANT, _SKILLS)
 
 
-def test_report_recommendation_never_raises_on_platform_error():
-    with (
-        patch(_CREDS, return_value=("t", "https://p")),
-        patch(_REPORT, side_effect=RuntimeError("boom")),
-        _sync_thread(),
-    ):
-        broker.report_recommendation("q", _RELEVANT, _SKILLS)  # no exception
+def test_send_recommendation_never_raises_on_platform_error():
+    platform = MagicMock()
+    platform.send_skill_recommendation.side_effect = RuntimeError("boom")
+    with patch(_MAKE, return_value=platform), _sync_thread():
+        broker.send_recommendation("q", _RELEVANT, _SKILLS)
 
 
-def test_report_recommendation_does_not_block(monkeypatch):
-    # The actual P1 fix: even a slow/hanging platform call must never delay the caller. Simulate a
-    # slow report_skill_recommendation and confirm report_recommendation itself returns almost
-    # instantly -- proving it's genuinely dispatched to a background thread, not just re-ordered
-    # relative to other calls (which would be a fragile, position-dependent fix).
-    def slow_report(*a, **k):
+def test_send_recommendation_does_not_block():
+    def slow_send(*a, **k):
         time.sleep(2.0)
 
-    with patch(_CREDS, return_value=("t", "https://p")), patch(_REPORT, side_effect=slow_report):
+    platform = MagicMock()
+    platform.send_skill_recommendation.side_effect = slow_send
+    with patch(_MAKE, return_value=platform):
         start = time.monotonic()
-        broker.report_recommendation("q", _RELEVANT, _SKILLS)
+        broker.send_recommendation("q", _RELEVANT, _SKILLS)
         elapsed = time.monotonic() - start
-    assert elapsed < 0.5, f"report_recommendation blocked for {elapsed:.2f}s -- not dispatched off-thread"
+    assert elapsed < 0.5, f"send_recommendation blocked for {elapsed:.2f}s"

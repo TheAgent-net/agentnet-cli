@@ -1,8 +1,7 @@
-"""Steer-text builders and the two consolidated port decisions: mid-run nudge and turn-end fallback.
+"""Steer-text builders and port decisions for mid-run nudge and turn-end fallback.
 
-:func:`check_steer` and :func:`check_fallback` are the pieces each adapter used to hand-roll
-(cache-read, check ``final``, take the atomic emit claim, build the reason text). Consolidating
-them here means an adapter's peek/post shrinks to "call this, and if it returns text, steer."
+:func:`check_steer` and :func:`check_fallback` read the cache, check ``final``, take the emit
+claim, and build steer text. Adapters call them from peek and post handlers.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ _POST_POLL_INTERVAL = 0.1
 
 
 def _show_block_instruction() -> str:
+    """Return instructions to reproduce the user-facing block exactly."""
     return (
         f"reply with the text between '{render.USER_BLOCK_START}' and '{render.USER_BLOCK_END}', "
         "reproduced EXACTLY: every skill line, every percentage. Do not summarize it, do not "
@@ -26,6 +26,7 @@ def _show_block_instruction() -> str:
 
 
 def steer_reason(outcome: str) -> str:
+    """Build mid-run steer text from a final outcome."""
     # The agent-only section is absent when no methodology was reachable (list-only outcome, which
     # still gets promoted to final). Pointing at a section that isn't there invites the model to
     # mishandle the whole steer, so the steps adapt to what the outcome actually contains.
@@ -47,6 +48,7 @@ def steer_reason(outcome: str) -> str:
 
 
 def fold_context(outcome: str) -> str:
+    """Build turn-end fallback text from a final outcome."""
     tail = (
         ", then follow the AGENT ONLY section"
         if render.AGENT_ONLY in outcome
@@ -60,10 +62,10 @@ def fold_context(outcome: str) -> str:
 
 
 def check_steer(session: str) -> str | None:
-    """Mid-run hard-nudge decision: an actionable, not-yet-shown outcome's steer reason, or None.
+    """Return mid-run steer text for an actionable, unclaimed outcome, or ``None``.
 
-    Returns None (allow the tool call / no-op) when: the cache isn't ready, the outcome is
-    phase-1-only (nothing to apply yet), or another peek/post already claimed the steer.
+    Return ``None`` when the cache is not ready, the outcome is phase-1 only, or another hook
+    already claimed the steer.
     """
     path = _session.cache_path(session)
     data = _session.cache_read(path)
@@ -77,12 +79,10 @@ def check_steer(session: str) -> str | None:
 
 
 def check_fallback(session: str, *, timeout: float) -> str | None:
-    """Turn-end fallback decision: the folded-context text for a no-tool answer, or None.
+    """Return turn-end fallback text for a no-tool answer, or ``None``.
 
-    Short bounded wait for a near-miss (relevant prompt that finished before the worker). Prefers a
-    final (actionable) outcome, but this is the last chance for the turn, so it takes the list if
-    that is all the worker produced. Returns None if nothing is relevant, or a peek/duplicate/
-    earlier fallback already steered.
+    Wait briefly for a near-miss outcome. Prefer a final outcome, but take the list when that is
+    all the worker produced. Return ``None`` when nothing is relevant or a steer already ran.
     """
     path = _session.cache_path(session)
     deadline = time.monotonic() + min(timeout, _MAX_POST_WAIT)
@@ -100,12 +100,7 @@ def check_fallback(session: str, *, timeout: float) -> str | None:
 
 
 def check_steer_raw(session: str) -> str | None:
-    """Same decision as :func:`check_steer`, but returns the bare ``outcome`` — no wrapper text.
-
-    Lets a harness build its own steer wording around the same claim/final/cache mechanics, instead
-    of the shared ``steer_reason`` framing. Duplicates :func:`check_steer`'s mechanics rather than
-    calling it, so that function's behavior for existing callers is untouched by this addition.
-    """
+    """Same as :func:`check_steer`, but return the bare outcome with no wrapper text."""
     path = _session.cache_path(session)
     data = _session.cache_read(path)
     if not data or not data.get("outcome"):
@@ -118,10 +113,7 @@ def check_steer_raw(session: str) -> str | None:
 
 
 def check_fallback_raw(session: str, *, timeout: float) -> str | None:
-    """Same decision as :func:`check_fallback`, but returns the bare ``outcome`` — no wrapper text.
-
-    See :func:`check_steer_raw` — same rationale, duplicated mechanics rather than a shared call.
-    """
+    """Same as :func:`check_fallback`, but return the bare outcome with no wrapper text."""
     path = _session.cache_path(session)
     deadline = time.monotonic() + min(timeout, _MAX_POST_WAIT)
     data = _session.cache_read(path)
