@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -12,8 +11,13 @@ from rich.console import Console
 from agentnet_cli import __version__
 from ...connectors.registry import get_connector
 from ...infra.config import load_config
+from ...infra.environments import (
+    detect_environments,
+    parse_connection_key,
+)
 from ...infra.manifest import load_manifest, record_connection, record_update_check, should_check_for_update
 from ...infra.paths import AgentName
+from ...infra.proc import agentnet_invocation, find_executable, run_tool, start_detached_process
 
 _err = Console(stderr=True)
 
@@ -44,7 +48,7 @@ def _check_interval_hours() -> float:
 
 
 def refresh_stale_connections(*, quiet: bool = False) -> int:
-    """Re-run connect() for agents whose manifest cli_version != current version."""
+    """Call connect() again for agents whose manifest cli_version differs from the current version."""
     config = load_config()
     if not config or not config.get("api_token"):
         return 0
@@ -54,14 +58,25 @@ def refresh_stale_connections(*, quiet: bool = False) -> int:
     if not connections:
         return 0
 
+    envs_by_key = {e.key: e for e in detect_environments()}
     refreshed = 0
-    for agent_name, conn_info in list(connections.items()):
+    for conn_key, conn_info in list(connections.items()):
         if conn_info.get("cli_version") == __version__:
             continue
 
         try:
+            agent_name, env_key = parse_connection_key(conn_key)
+            # Prefer env metadata stored on the record when present.
+            env_key = conn_info.get("env") or env_key
             agent_enum = AgentName(agent_name)
-            connector = get_connector(agent_enum)
+            env = envs_by_key.get(env_key)
+            if env is None and env_key == "local":
+                from ...infra.environments import local_environment  # noqa: PLC0415
+
+                env = local_environment()
+            if env is None:
+                continue
+            connector = get_connector(agent_enum, env)
             detection = connector.detect()
             if not detection.detected:
                 continue
@@ -69,16 +84,18 @@ def refresh_stale_connections(*, quiet: bool = False) -> int:
             result = connector.connect(config)
             if result.success:
                 record_connection(
-                    agent_name,
+                    conn_key,
                     files_created=result.files_created,
                     files_modified=result.files_modified,
                     mcp_entry=result.mcp_entry,
+                    env_key=env.key,
+                    env_label=env.label,
                 )
                 refreshed += 1
             else:
-                print(f"Warning: refresh for {agent_name} returned success=False", file=sys.stderr)
+                print(f"Warning: refresh for {conn_key} returned success=False", file=sys.stderr)
         except (OSError, ValueError, KeyError) as exc:
-            print(f"Warning: failed to refresh {agent_name}: {exc}", file=sys.stderr)
+            print(f"Warning: failed to refresh {conn_key}: {exc}", file=sys.stderr)
             continue
 
     if refreshed and not quiet:
@@ -107,13 +124,13 @@ def check_pypi_latest() -> str | None:
 
 
 def detect_install_method() -> str:
-    """Human-readable label for how this install will be upgraded."""
+    """Return a readable label for the upgrade method."""
     cmd = _upgrade_command()
-    if cmd[:2] == ["uv", "tool"]:
+    if len(cmd) >= 2 and cmd[1] == "tool":
         return "uv tool"
-    if cmd[0] == "pipx":
+    if "pipx" in cmd[0]:
         return "pipx"
-    if cmd[0] == "npm":
+    if "npm" in cmd[0]:
         return "npm"
     return "pip"
 
@@ -123,12 +140,7 @@ def self_upgrade(*, background: bool = False, verbose: bool = False) -> tuple[bo
     cmd = _upgrade_command()
     try:
         if background:
-            subprocess.Popen(  # noqa: S603
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            start_detached_process(cmd)
             latest = check_pypi_latest()
             return True, latest or "latest"
 
@@ -148,19 +160,20 @@ def self_upgrade(*, background: bool = False, verbose: bool = False) -> tuple[bo
 
 
 def _spawn_refresh_with_upgraded_binary(*, quiet: bool = False) -> int:
-    """Re-invoke the upgraded agentnet binary so integrations refresh at the new version."""
-    agentnet_bin = shutil.which("agentnet")
+    """Call the upgraded agentnet binary again. This refreshes integrations at the new version."""
     args = ["update", "--refresh-only"]
     if quiet:
         args.append("--quiet")
-    if agentnet_bin:
-        proc = subprocess.run([agentnet_bin, *args], timeout=120)  # noqa: S603
+    inv = agentnet_invocation()
+    try:
+        proc = subprocess.run([*inv, *args], timeout=120)  # noqa: S603
         return proc.returncode
-    return 0
+    except Exception:
+        return 0
 
 
 def clean_update(*, quiet: bool = False, refresh_only: bool = False) -> AutoUpdateResult:
-    """User-facing update: upgrade the package, then refresh integrations from the new install."""
+    """Upgrade the package, then refresh integrations from the new install."""
     if refresh_only:
         refreshed = refresh_stale_connections(quiet=quiet)
         return AutoUpdateResult(checked=True, refreshed=refreshed)
@@ -243,7 +256,7 @@ def run_update(*, quiet: bool = False, background: bool = False, force: bool = F
 
 
 def maybe_auto_update(*, quiet: bool = True) -> AutoUpdateResult:
-    """Rate-limited silent auto-update used by CLI callback and MCP startup."""
+    """Run a rate-limited silent auto-update for the CLI callback and MCP startup."""
     if not _auto_update_enabled():
         refreshed = refresh_stale_connections(quiet=quiet)
         return AutoUpdateResult(refreshed=refreshed)
@@ -251,43 +264,36 @@ def maybe_auto_update(*, quiet: bool = True) -> AutoUpdateResult:
 
 
 def _upgrade_command() -> list[str]:
-    """Detect install method and return the right upgrade command."""
-    if shutil.which("uv"):
+    """Find the install method and return the upgrade command with absolute paths."""
+    uv = find_executable("uv")
+    if uv:
         try:
-            r = subprocess.run(
-                ["uv", "tool", "list"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if re.search(r"^agentnet-cli\b", r.stdout, re.MULTILINE):
-                return ["uv", "tool", "upgrade", "agentnet-cli"]
+            r = run_tool("uv", ["tool", "list"], timeout=10, text=True)
+            if r is not None and re.search(r"^agentnet-cli\b", r.stdout or "", re.MULTILINE):
+                return [uv, "tool", "upgrade", "agentnet-cli"]
         except Exception:
             pass
 
-    if shutil.which("pipx"):
+    pipx = find_executable("pipx")
+    if pipx:
         try:
-            r = subprocess.run(
-                ["pipx", "list", "--short"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if re.search(r"^agentnet-cli\b", r.stdout, re.MULTILINE):
-                return ["pipx", "upgrade", "agentnet-cli"]
+            r = run_tool("pipx", ["list", "--short"], timeout=10, text=True)
+            if r is not None and re.search(r"^agentnet-cli\b", r.stdout or "", re.MULTILINE):
+                return [pipx, "upgrade", "agentnet-cli"]
         except Exception:
             pass
 
-    if shutil.which("npm"):
+    npm = find_executable("npm")
+    if npm:
         try:
-            r = subprocess.run(
-                ["npm", "list", "-g", "--depth=0", "agentnet-cli"],
-                capture_output=True,
-                text=True,
+            r = run_tool(
+                "npm",
+                ["list", "-g", "--depth=0", "agentnet-cli"],
                 timeout=10,
+                text=True,
             )
-            if re.search(r"^agentnet-cli@", r.stdout, re.MULTILINE):
-                return ["npm", "install", "-g", "agentnet-cli@latest"]
+            if r is not None and re.search(r"^agentnet-cli@", r.stdout or "", re.MULTILINE):
+                return [npm, "install", "-g", "agentnet-cli@latest"]
         except Exception:
             pass
 

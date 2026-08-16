@@ -11,8 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ...infra.config import load_config
-from ...infra.platform import resolve_platform_url
-from ...marketplace.client import PlatformClient
+from ...infra.credentials import ensure_guest_credentials, is_authenticated
 from .connect import connect_command
 from .detect import detect_all
 from ...infra.paths import AgentName, agent_display_name
@@ -22,72 +21,130 @@ console = Console()
 
 
 def _send_telemetry(event_type: str, **metadata: str) -> None:
-    """Best-effort telemetry to platform; never blocks setup."""
+    """Send telemetry to the platform. Do not wait on setup."""
     try:
-        import httpx
+        from ...infra.credentials import make_platform_client
 
-        config = load_config() or {}
-        base = resolve_platform_url(config=config)
-        token = config.get("api_token", "")
-        http_client = httpx.Client(timeout=5.0)
-        with PlatformClient(base_url=base, api_token=token, http_client=http_client) as client:
+        client = make_platform_client(timeout=5.0)
+        if client is None:
+            return
+        try:
             client.send_telemetry(event_type=event_type, metadata=metadata or None)
+        finally:
+            client.close()
     except Exception:
         pass
 
 
-def setup_command(platform_url: str | None = None, *, choose: bool = False) -> None:
+def setup_command(
+    platform_url: str | None = None,
+    *,
+    choose: bool = False,
+    env_filter: str | None = None,
+    no_mirror: bool = False,
+) -> None:
+    """Detect and connect harnesses first, then optionally sign in.
+
+    A guest API token is bootstrapped before connect so hooks work immediately.
+    Browser sign-in elevates that guest identity for higher rate limits.
+    """
     _send_telemetry("cli_setup")
-    config = load_config()
-    if not config or not config.get("api_token"):
-        console.print()
-        console.print("  [bold]Step 1:[/bold] Sign in to AgentNet")
-        register_command(
-            platform_url=platform_url,
-            auto_agent_name=default_agent_name(),
-            auto_visibility="private",
-        )
-    else:
-        console.print()
-        console.print("  [green]✓[/green] Already signed in to AgentNet")
-
-    console.print("  [bold]Step 2:[/bold] Detect local agents")
-    results = detect_all()
-    _print_detected_agents(results)
-
-    targets = _available_targets(results)
-    if not targets:
-        console.print("\n  [dim]All detected agents are already configured.[/dim]\n")
-        return
 
     console.print()
-    if choose:
-        console.print(
-            f"  [bold]Step 3:[/bold] Choose agents to configure ({len(targets)} available)"
+    console.print("  [bold]Step 1:[/bold] Prepare AgentNet credentials")
+    try:
+        cfg = ensure_guest_credentials(platform_url=platform_url)
+        if cfg.get("tier") == "guest":
+            console.print(
+                "  [green]✓[/green] Guest API token ready "
+                "[dim](hooks work now; sign in later for higher limits)[/dim]"
+            )
+        else:
+            console.print("  [green]✓[/green] Using existing AgentNet credentials")
+    except Exception as exc:
+        console.print(f"  [yellow]![/yellow] Could not bootstrap guest token: {exc}")
+        console.print("  [dim]Continuing — connect may still succeed locally.[/dim]")
+
+    console.print()
+    console.print("  [bold]Step 2:[/bold] Detect local agents")
+    results = detect_all(env_filter=env_filter, no_mirror=no_mirror)
+    _print_detected_agents(results)
+    targets = _available_targets(results)
+    configured: list[tuple[str, str]] = []
+    if not targets:
+        console.print("\n  [dim]All detected agents are already configured.[/dim]")
+    else:
+        console.print()
+        if choose:
+            console.print(
+                f"  [bold]Step 3:[/bold] Choose agents to configure ({len(targets)} available)"
+            )
+            selected, connect_all = _select_targets(targets)
+            if not selected:
+                console.print("\n  [dim]No agents configured.[/dim]")
+            elif connect_all:
+                connect_command(connect_all=True, env_filter=env_filter, no_mirror=no_mirror)
+                configured = targets
+            else:
+                for agent_name, _env_key in selected:
+                    connect_command(
+                        agent_name=agent_name,
+                        env_filter=env_filter,
+                        no_mirror=no_mirror,
+                    )
+                configured = selected
+        else:
+            console.print(
+                f"  [bold]Step 3:[/bold] Configuring all detected agents ({len(targets)})"
+            )
+            connect_command(connect_all=True, env_filter=env_filter, no_mirror=no_mirror)
+            configured = targets
+
+    _offer_sign_in(platform_url)
+
+    if configured:
+        _send_telemetry(
+            "cli_setup_complete",
+            connectors=",".join(f"{a}@{e}" for a, e in configured),
         )
-        selected, connect_all = _select_targets(targets)
-        if not selected:
-            console.print("\n  [dim]No agents configured.[/dim]\n")
-            return
-        if connect_all:
-            connect_command(connect_all=True)
-            return
-        for agent_name in selected:
-            connect_command(agent_name=agent_name)
+
+
+def _offer_sign_in(platform_url: str | None) -> None:
+    """Optional browser sign-in after harnesses are wired."""
+    config = load_config()
+    console.print()
+    if is_authenticated(config=config):
+        console.print("  [green]✓[/green] Already signed in to AgentNet")
         return
 
+    console.print("  [bold]Step 4:[/bold] Sign in to AgentNet (optional)")
     console.print(
-        f"  [bold]Step 3:[/bold] Configuring all detected agents ({len(targets)})"
+        "  [dim]Guest hooks already work. Sign in to elevate your identity "
+        "and raise rate limits.[/dim]"
     )
-    connect_command(connect_all=True)
-    _send_telemetry("cli_setup_complete", connectors=",".join(targets))
+    if not typer.confirm("  Sign in now?", default=True):
+        console.print(
+            "  [dim]Skipped. Run [bold]agentnet register[/bold] later when you're ready.[/dim]\n"
+        )
+        return
+
+    register_command(
+        platform_url=platform_url,
+        auto_agent_name=default_agent_name(),
+        auto_visibility="private",
+    )
 
 
-def _available_targets(results) -> list[str]:
-    return [r.agent_name for r in results if r.detected and not r.already_connected]
+def _available_targets(results) -> list[tuple[str, str]]:
+    """Return (agent_name, env_key) pairs that are ready to connect."""
+    return [
+        (r.agent_name, r.env_key)
+        for r in results
+        if r.detected and not r.already_connected
+    ]
 
 
-def _select_targets(targets: list[str]) -> tuple[list[str], bool]:
+def _select_targets(targets: list[tuple[str, str]]) -> tuple[list[tuple[str, str]], bool]:
     mode = _radio_menu(
         "How would you like to set up AgentNet?",
         (
@@ -103,7 +160,13 @@ def _select_targets(targets: list[str]) -> tuple[list[str], bool]:
     if mode == 2:
         return [], False
 
-    labels = [agent_display_name(AgentName(agent_name)) for agent_name in targets]
+    labels = []
+    for agent_name, env_key in targets:
+        display = agent_display_name(AgentName(agent_name))
+        if env_key == "local":
+            labels.append(display)
+        else:
+            labels.append(f"{display} — {env_key}")
     selected_indexes = _multi_select_menu(
         "Which agents should AgentNet configure?",
         labels,
@@ -396,6 +459,7 @@ def _print_detected_agents(results) -> None:
         header_style="bold dim",
     )
     table.add_column("Agent", min_width=18)
+    table.add_column("Environment", min_width=16)
     table.add_column("Status", min_width=14)
     table.add_column("Setup")
 
@@ -408,7 +472,7 @@ def _print_detected_agents(results) -> None:
         else:
             setup = "[dim]skipped[/dim]"
         status = "[green]detected[/green]" if result.detected else "[dim]not found[/dim]"
-        table.add_row(display, status, setup)
+        table.add_row(display, result.env_label, status, setup)
 
     console.print()
     console.print(table)

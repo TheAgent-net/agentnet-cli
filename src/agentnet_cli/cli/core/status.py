@@ -1,3 +1,5 @@
+"""Status CLI command for registration and agent state."""
+
 from __future__ import annotations
 
 from rich.console import Console
@@ -10,7 +12,12 @@ from ...infra.paths import AgentName, agent_display_name, short_path
 console = Console()
 
 
-def status_command() -> None:
+def status_command(
+    *,
+    env_filter: str | None = None,
+    no_mirror: bool = False,
+) -> None:
+    """Show platform registration and agent detect or connect status."""
     config = load_config()
     if not config:
         console.print()
@@ -23,7 +30,7 @@ def status_command() -> None:
     console.print(f"  URL:    {config.get('platform_url')}")
     token = config.get("api_token", "")
     console.print(f"  Token:  [dim]...{token[-6:]}[/dim]" if len(token) > 6 else "  Token:  [dim]configured[/dim]")
-    results = detect_all()
+    results = detect_all(env_filter=env_filter, no_mirror=no_mirror)
     detected_count = sum(1 for r in results if r.detected)
     connected_count = sum(1 for r in results if r.already_connected)
 
@@ -35,6 +42,7 @@ def status_command() -> None:
         show_header=True, header_style="bold dim",
     )
     table.add_column("Agent", min_width=18)
+    table.add_column("Environment", min_width=16)
     table.add_column("Detected", min_width=10, justify="center")
     table.add_column("Connected", min_width=11, justify="center")
     table.add_column("Binary")
@@ -51,7 +59,7 @@ def status_command() -> None:
         else:
             binary = "[dim]—[/dim]"
 
-        table.add_row(display, detected, connected, binary)
+        table.add_row(display, r.env_label, detected, connected, binary)
 
     console.print(table)
 
