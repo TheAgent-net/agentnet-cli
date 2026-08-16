@@ -1,1 +1,1 @@
-"""Config, paths, and connection manifest."""
+"""Config, paths, and the connection manifest."""
