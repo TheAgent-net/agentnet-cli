@@ -4,6 +4,7 @@ from rich.console import Console
 
 from ...connectors.registry import get_connector
 from ...infra.config import load_config
+from ...infra.credentials import ensure_guest_credentials
 from .detect import detect_all
 from ...infra.manifest import record_connection
 from ...infra.paths import AgentName, agent_display_name
@@ -12,10 +13,23 @@ console = Console()
 
 
 def connect_command(agent_name: str | None = None, connect_all: bool = False) -> None:
-    config = load_config()
-    if not config or not config.get("api_token"):
+    """Connect agents to the Agent-net platform.
+
+    Ensures a guest API token exists when none is saved, then wires harnesses.
+    Browser login later elevates the guest identity.
+    """
+    try:
+        config = ensure_guest_credentials()
+    except Exception as exc:
+        console.print(f"\n  [yellow]![/yellow] Guest bootstrap skipped: {exc}")
+        config = load_config() or {}
+
+    if not config.get("api_token"):
         console.print()
-        console.print("  [red]Not registered.[/red] Run [bold]agentnet setup[/bold] first.")
+        console.print(
+            "  [red]No AgentNet credentials.[/red] "
+            "Run [bold]agentnet setup[/bold] or [bold]agentnet register[/bold] first."
+        )
         console.print()
         raise SystemExit(1)
 
@@ -61,7 +75,8 @@ def connect_command(agent_name: str | None = None, connect_all: bool = False) ->
             file_count = len(result.files_created)
             mcp_info = " + MCP server registered" if result.mcp_entry else ""
             console.print(
-                f"  [green]✓[/green] {display} connected ({file_count} file{'s' if file_count != 1 else ''} created{mcp_info})"
+                f"  [green]✓[/green] {display} connected "
+                f"({file_count} file{'s' if file_count != 1 else ''} created{mcp_info})"
             )
             succeeded += 1
         else:
