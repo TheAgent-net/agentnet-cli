@@ -1,29 +1,24 @@
-"""Install the AgentNet skill-fire hooks into Hermes' ``~/.hermes/config.yaml``.
+"""Install AgentNet hooks in Hermes config.yaml.
 
-Registers three shell hooks mirroring the Claude/Cursor flow — ``pre_llm_call`` (spawn the
-background discovery worker), ``pre_tool_call`` (hard nudge) and ``pre_verify`` (fallback when the
-agent edited code and is about to finish).
+This writes three shell hooks: ``pre_llm_call`` starts a discovery worker, ``pre_tool_call`` guides
+the agent, and ``pre_verify`` is the fallback. The config is YAML. Each event maps to a list of
+``{command, timeout}`` entries. Install is idempotent and keeps existing hooks.
 
-Two Hermes specifics:
-
-- The config is **YAML** (not JSON), and each event maps to a list of ``{command, timeout}`` entries
-  (``matcher`` applies to pre/post_tool_call only — we enforce steer-once in the hook itself, so no
-  matcher is needed). Install is idempotent and preserves any hooks the user already has.
-- Shell hooks require **consent**: Hermes prompts once per ``(event, command)`` pair and persists it
-  to ``~/.hermes/shell-hooks-allowlist.json``. Non-TTY runs (gateway, cron, CI) *silently skip*
-  un-approved hooks, so we pre-approve our own three commands there. That is deliberately narrower
-  than flipping the global ``hooks_auto_accept``, which would auto-approve *any* hook.
+Hermes needs consent for shell hooks. It prompts once per ``(event, command)`` pair and saves
+approvals to ``~/.hermes/shell-hooks-allowlist.json``. Non-TTY runs skip unapproved hooks. We
+pre-approve our three commands there. This is narrower than the global ``hooks_auto_accept``.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
 from typing import Any
 
 import yaml
 
+from ..infra.environments import Environment, local_environment
 from ..infra.paths import AgentName, agent_config_root
+from ..infra.proc import is_agentnet_subcommand
 
 # event -> flag. Timeout is generous but bounded; these hooks only read a cache file (the fallback
 # waits ~3s at most), so they never hold up a turn.
@@ -35,76 +30,57 @@ _HOOK_FLAGS: dict[str, str] = {
 _TIMEOUT = 15
 
 
-def _agentnet_bin() -> str:
-    """Absolute path to the agentnet binary when resolvable, else the bare command.
-
-    ``hermes hooks doctor`` stats the command's first token to check the exec bit, so a bare
-    ``agentnet`` is reported as "script missing or not executable" even though it runs fine. Same
-    resolution the Cursor MCP writer uses.
-    """
-    return shutil.which("agentnet") or "agentnet"
-
-
-def _hooks() -> dict[str, str]:
-    exe = _agentnet_bin()
-    return {event: f"{exe} hermes-hook {flag}" for event, flag in _HOOK_FLAGS.items()}
+def _hooks(env: Environment | None = None) -> dict[str, str]:
+    env = env if env is not None else local_environment()
+    return {event: env.hook_command("hermes-hook", flag) for event, flag in _HOOK_FLAGS.items()}
 
 
 # Back-compat alias for callers/tests that just want the event names.
 _HOOKS = _HOOK_FLAGS
 
 
-def _config_path():
-    return agent_config_root(AgentName.HERMES) / "config.yaml"
+def _config_path(env: Environment | None = None):
+    return agent_config_root(AgentName.HERMES, env) / "config.yaml"
 
 
-def _allowlist_path():
-    return agent_config_root(AgentName.HERMES) / "shell-hooks-allowlist.json"
+def _allowlist_path(env: Environment | None = None):
+    return agent_config_root(AgentName.HERMES, env) / "shell-hooks-allowlist.json"
 
 
 def _load_yaml(path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        data = yaml.safe_load(path.read_text()) or {}
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         return data if isinstance(data, dict) else {}
     except yaml.YAMLError:
         return {}
 
 
 def _is_agentnet_cmd(cmd: Any) -> bool:
-    """True only for *our* hook command.
+    """Return True only for our hook command.
 
-    Parsed rather than substring-matched: the command may be bare (``agentnet hermes-hook …``) or
-    absolute (``/usr/local/bin/agentnet hermes-hook …``) depending on what ``which`` resolved at
-    install time, but a substring test would also claim an unrelated user hook that merely mentions
-    it (e.g. ``/opt/wrapper.sh --run "agentnet hermes-hook --pre"``) — install would replace it and
-    uninstall would revoke its consent.
+    Parse the command string. It may be bare, absolute, a Windows ``.exe``, or ``wsl.exe``-bridged.
+    Do not use substring matching. Other user hooks may mention agentnet.
     """
-    if not isinstance(cmd, str):
-        return False
-    parts = cmd.split()
-    if len(parts) < 2:
-        return False
-    exe = parts[0].rsplit("/", 1)[-1]
-    return exe == "agentnet" and parts[1] == "hermes-hook"
+    return is_agentnet_subcommand(cmd, "hermes-hook")
 
 
 def _event_has_agentnet(entries: list[Any]) -> bool:
     return any(isinstance(e, dict) and _is_agentnet_cmd(e.get("command")) for e in entries)
 
 
-def _sync_allowlist(*, add: bool) -> None:
-    """Pre-approve (or revoke) our own hook commands in Hermes' consent allowlist.
+def _sync_allowlist(*, add: bool, env: Environment | None = None) -> None:
+    """Pre-approve or remove our hook commands in the Hermes consent allowlist.
 
-    Best-effort: a malformed allowlist is left untouched rather than clobbered — losing a user's
-    approvals would silently disable their other hooks.
+    If the allowlist is bad, leave it unchanged. Do not overwrite user approvals.
     """
-    path = _allowlist_path()
+    env = env if env is not None else local_environment()
+    path = _allowlist_path(env)
     data: dict[str, Any] = {}
     if path.exists():
         try:
-            loaded = json.loads(path.read_text())
+            loaded = json.loads(path.read_text(encoding="utf-8"))
             data = loaded if isinstance(loaded, dict) else {}
         except json.JSONDecodeError:
             return
@@ -117,18 +93,20 @@ def _sync_allowlist(*, add: bool) -> None:
         if not (isinstance(a, dict) and _is_agentnet_cmd(a.get("command")))
     ]
     if add:
-        kept.extend({"event": event, "command": cmd} for event, cmd in _hooks().items())
+        kept.extend({"event": event, "command": cmd} for event, cmd in _hooks(env).items())
     data["approvals"] = kept
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2) + "\n")
+        from ..infra.config import write_file_safe
+
+        write_file_safe(path, json.dumps(data, indent=2) + "\n")
     except OSError:
         pass
 
 
-def install() -> tuple[bool, str]:
-    """Add the AgentNet hooks to ~/.hermes/config.yaml (+ consent). Returns (changed, path)."""
-    path = _config_path()
+def install(env: Environment | None = None) -> tuple[bool, str]:
+    """Add AgentNet hooks to ~/.hermes/config.yaml and update consent. Return (changed, path)."""
+    env = env if env is not None else local_environment()
+    path = _config_path(env)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _load_yaml(path)
     hooks = data.setdefault("hooks", {})
@@ -137,7 +115,7 @@ def install() -> tuple[bool, str]:
         data["hooks"] = hooks
 
     changed = False
-    for event, command in _hooks().items():
+    for event, command in _hooks(env).items():
         entries = hooks.get(event)
         if not isinstance(entries, list):
             entries = []
@@ -152,17 +130,21 @@ def install() -> tuple[bool, str]:
             changed = True
 
     if changed:
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
-    _sync_allowlist(add=True)
+        path.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
+    _sync_allowlist(add=True, env=env)
     return changed, str(path)
 
 
-def uninstall() -> tuple[bool, str]:
-    """Remove the AgentNet hooks from ~/.hermes/config.yaml (+ consent). Returns (changed, path)."""
-    path = _config_path()
+def uninstall(env: Environment | None = None) -> tuple[bool, str]:
+    """Remove AgentNet hooks from ~/.hermes/config.yaml and update consent. Return (changed, path)."""
+    env = env if env is not None else local_environment()
+    path = _config_path(env)
     data = _load_yaml(path)
     hooks = data.get("hooks")
-    _sync_allowlist(add=False)
+    _sync_allowlist(add=False, env=env)
     if not isinstance(hooks, dict):
         return False, str(path)
 
@@ -184,5 +166,8 @@ def uninstall() -> tuple[bool, str]:
     if changed:
         if not hooks:
             data.pop("hooks", None)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        path.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
     return changed, str(path)

@@ -37,7 +37,7 @@ Issues = "https://github.com/TheAgent-net/agentnet-cli/issues"
 agentnet = "agentnet_cli.cli.main:app"
 
 [project.entry-points."hermes_agent.plugins"]
-agentnet = "agentnet_cli.tools.hermes"
+agentnet = "agentnet_cli.integrations.hermes"
 
 [build-system]
 requires = ["hatchling"]

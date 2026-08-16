@@ -37,23 +37,28 @@ def test_detect_not_found(fake_home):
 
 def test_connect_calls_plugin_install_and_mcp_set(fake_home):
     _setup_openclaw(fake_home)
-    with patch("shutil.which", return_value="/usr/bin/openclaw"), \
-         patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
+    calls: list[list[str]] = []
+
+    def _capture(name, args, **kw):
+        calls.append([name, *args])
+        return _mock_run_ok()
+
+    with patch("agentnet_cli.connectors.openclaw.find_executable", return_value="/usr/bin/openclaw"), \
+         patch("agentnet_cli.connectors.openclaw.run_tool", side_effect=_capture):
         result = OpenClawConnector().connect({"api_token": "t"})
     assert result.success
-    install_calls = [c for c in mock_run.call_args_list if "install" in c[0][0]]
+    install_calls = [c for c in calls if "install" in c]
     assert len(install_calls) == 1
-    cmd = install_calls[0][0][0]
-    assert cmd[:3] == ["openclaw", "plugins", "install"]
-    assert "--force" in cmd
-    mcp_calls = [c for c in mock_run.call_args_list if c[0][0][:3] == ["openclaw", "mcp", "set"]]
+    assert install_calls[0][:3] == ["openclaw", "plugins", "install"]
+    assert "--force" in install_calls[0]
+    mcp_calls = [c for c in calls if c[:3] == ["openclaw", "mcp", "set"]]
     assert len(mcp_calls) == 1
-    assert mcp_calls[0][0][0][3] == "agentnet"
+    assert mcp_calls[0][3] == "agentnet"
 
 
 def test_connect_no_openclaw_binary(fake_home):
     _setup_openclaw(fake_home)
-    with patch("shutil.which", return_value=None):
+    with patch("agentnet_cli.connectors.openclaw.find_executable", return_value=None):
         result = OpenClawConnector().connect({"api_token": "t"})
     assert result.success is False
     assert any("OpenClaw" in e for e in result.errors)
@@ -63,8 +68,8 @@ def test_connect_install_failure(fake_home):
     _setup_openclaw(fake_home)
     fail = MagicMock(returncode=1, stderr=b"network error")
 
-    with patch("shutil.which", return_value="/usr/bin/openclaw"), \
-         patch("subprocess.run", return_value=fail):
+    with patch("agentnet_cli.connectors.openclaw.find_executable", return_value="/usr/bin/openclaw"), \
+         patch("agentnet_cli.connectors.openclaw.run_tool", return_value=fail):
         result = OpenClawConnector().connect({"api_token": "t"})
     assert result.success is False
     assert any("network error" in e for e in result.errors)
@@ -77,8 +82,8 @@ def test_connect_cleans_legacy_plugin_entry(fake_home):
         "plugins": {"agentnet-gateway": {"enabled": True}, "other": {"enabled": True}},
     }))
 
-    with patch("shutil.which", return_value="/usr/bin/openclaw"), \
-         patch("subprocess.run", side_effect=_mock_run_ok):
+    with patch("agentnet_cli.connectors.openclaw.find_executable", return_value="/usr/bin/openclaw"), \
+         patch("agentnet_cli.connectors.openclaw.run_tool", side_effect=_mock_run_ok):
         OpenClawConnector().connect({"api_token": "t"})
 
     data = json.loads(config.read_text())
@@ -92,8 +97,8 @@ def test_connect_cleans_legacy_backup(fake_home):
     backup.parent.mkdir(parents=True)
     backup.write_text("{}")
 
-    with patch("shutil.which", return_value="/usr/bin/openclaw"), \
-         patch("subprocess.run", side_effect=_mock_run_ok):
+    with patch("agentnet_cli.connectors.openclaw.find_executable", return_value="/usr/bin/openclaw"), \
+         patch("agentnet_cli.connectors.openclaw.run_tool", side_effect=_mock_run_ok):
         OpenClawConnector().connect({"api_token": "t"})
 
     assert not backup.exists()
@@ -103,17 +108,20 @@ def test_connect_cleans_legacy_backup(fake_home):
 
 
 def test_disconnect_calls_mcp_unset_and_plugin_uninstall(fake_home):
-    with patch("shutil.which", return_value="/usr/bin/openclaw"), \
-         patch("subprocess.run", side_effect=_mock_run_ok) as mock_run:
+    calls: list[list[str]] = []
+
+    def _capture(name, args, **kw):
+        calls.append([name, *args])
+        return _mock_run_ok()
+
+    with patch("agentnet_cli.connectors.openclaw.run_tool", side_effect=_capture):
         ok = OpenClawConnector().disconnect({})
     assert ok
-    calls = mock_run.call_args_list
-    assert len(calls) == 2
-    assert calls[0][0][0] == ["openclaw", "mcp", "unset", "agentnet"]
-    assert calls[1][0][0] == ["openclaw", "plugins", "uninstall", _PLUGIN_ID, "--force"]
+    assert calls[0] == ["openclaw", "mcp", "unset", "agentnet"]
+    assert calls[1] == ["openclaw", "plugins", "uninstall", _PLUGIN_ID, "--force"]
 
 
 def test_disconnect_no_openclaw_binary(fake_home):
-    with patch("shutil.which", return_value=None):
+    with patch("agentnet_cli.connectors.openclaw.run_tool", return_value=None):
         ok = OpenClawConnector().disconnect({})
     assert ok

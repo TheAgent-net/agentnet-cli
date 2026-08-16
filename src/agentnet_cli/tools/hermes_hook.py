@@ -1,25 +1,18 @@
-"""Hermes shell hooks — surface relevant AgentNet skills, reusing the shared skillfire pipeline.
+"""Hermes shell hooks — surface relevant AgentNet skills with the shared skillfire pipeline.
 
-Hermes shell hooks are declared in ``~/.hermes/config.yaml``, run in **both CLI and gateway**, take
-a JSON payload on stdin and return JSON on stdout — the same shape as the Claude and Cursor
-adapters, so only this thin I/O layer is new. The worker, session cache and atomic once-claims come
-straight from the :mod:`agentnet_cli.tools.skillfire` port.
+Hermes shell hooks are declared in ``~/.hermes/config.yaml``. They run in CLI and gateway, read
+JSON from stdin, and write JSON to stdout. The worker, session cache, and once-claims come from
+:mod:`agentnet_cli.tools.skillfire`.
 
-Event mapping (Hermes natively accepts the Claude-Code ``{"decision": "block", ...}`` shape):
+Event mapping (Hermes accepts Claude-style ``{"decision": "block", ...}``):
 
-- **pre_llm_call** -> ``hermes-hook --pre``: fires once per turn *before* the tool loop — Hermes'
-  documented equivalent of Claude's ``UserPromptSubmit``. Spawns the detached worker and returns
-  ``{}``. (It *can* inject via ``{"context": …}``, but the worker needs ~20s, so injecting here
-  would stall the turn; the steer lands on a later tool call instead.)
-- **pre_tool_call** -> ``hermes-hook --peek``: the hard nudge. Returns
-  ``{"decision": "block", "reason": …}``, which short-circuits the tool and hands ``reason`` back to
-  the model as the tool's error — so the model sees it inline and re-plans. Steer-once.
-- **pre_verify** -> ``hermes-hook --post``: fallback, fires when the agent edited code and is about
-  to finish. ``{"action": "continue", "message": …}`` appends a synthetic user turn and keeps the
-  loop going. Gated on ``extra.attempt`` because it re-fires after each nudge.
+- **pre_llm_call** -> ``hermes-hook --pre``: spawn the detached worker and return ``{}``.
+- **pre_tool_call** -> ``hermes-hook --peek``: return ``{"decision": "block", "reason": …}`` once.
+- **pre_verify** -> ``hermes-hook --post``: return ``{"action": "continue", "message": …}`` as a
+  fallback when the agent is about to finish. Gated on ``extra.attempt``.
 
 Payload: ``{"hook_event_name", "tool_name", "tool_input", "session_id", "cwd", "extra": {...}}``.
-Best-effort throughout: any missing field / not-ready cache degrades to ``{}`` (no-op).
+Missing fields or a not-ready cache return ``{}`` (no-op).
 """
 
 from __future__ import annotations
@@ -32,24 +25,26 @@ from . import skillfire
 
 
 def _session(event: dict) -> str:
+    """Return the session id from a Hermes hook event."""
     return str(event.get("session_id") or "")
 
 
 def _extra(event: dict) -> dict:
+    """Return the ``extra`` dict from a Hermes hook event."""
     extra = event.get("extra")
     return extra if isinstance(extra, dict) else {}
 
 
 def _emit(obj: dict) -> None:
+    """Write one JSON response to stdout."""
     sys.stdout.write(json.dumps(obj))
     sys.stdout.flush()
 
 
 def run_hermes_pre(*, limit: int, timeout: float) -> None:
-    """pre_llm_call: spawn the detached worker for this turn, then get out of the way.
+    """Handle pre_llm_call: spawn the detached worker for this turn, then return ``{}``.
 
-    Spawn-once per (session, prompt) so duplicate registrations spawn one worker; skips our own
-    ``[AgentNet]`` continuation so the pre_verify fallback can't loop.
+    Spawn once per (session, prompt). Skip ``[AgentNet]`` continuations so fallback cannot loop.
     """
     if os.environ.get(skillfire.SUBAGENT_ENV):
         _emit({})
@@ -68,10 +63,9 @@ def run_hermes_pre(*, limit: int, timeout: float) -> None:
 
 
 def run_hermes_peek(*, limit: int, timeout: float) -> None:
-    """pre_tool_call: hard nudge — block one tool call and hand the skill back to the model.
+    """Handle pre_tool_call: block one tool call and hand the skill back to the model.
 
-    ``{}`` allows the call. We only block when the outcome is ready *and* actionable (``final``),
-    so we never spend the single steer on a list the agent has nothing to apply from.
+    Return ``{}`` to allow the call. Block only when the outcome is ready and actionable.
     """
     if os.environ.get(skillfire.SUBAGENT_ENV):
         _emit({})
@@ -88,11 +82,9 @@ def run_hermes_peek(*, limit: int, timeout: float) -> None:
 
 
 def run_hermes_post(*, limit: int, timeout: float) -> None:
-    """pre_verify: fallback — keep the turn going so the skill still lands.
+    """Handle pre_verify: keep the turn going so the skill still lands.
 
-    Fires only when the agent edited code and is about to finish. Idempotent on ``extra.attempt``:
-    Hermes re-fires this after each nudge, so a hook that always continues would just burn the
-    ``max_verify_nudges`` budget.
+    Fire when the agent edited code and is about to finish. Skip when ``extra.attempt`` is set.
     """
     if os.environ.get(skillfire.SUBAGENT_ENV):
         _emit({})

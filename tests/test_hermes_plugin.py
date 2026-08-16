@@ -3,26 +3,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from agentnet_cli.tools.hermes import handlers, register
-from agentnet_cli.tools.hermes.schemas import SCHEMAS
-
-EXPECTED_TOOL_NAMES = [
-    "agentnet_search",
-    "agentnet_discover",
-    "agentnet_discover_agents",
-    "agentnet_get_agent",
-    "agentnet_discover_skills",
-    "agentnet_search_skills",
-    "agentnet_search_skillsmp",
-    "agentnet_search_claude_plugins",
-    "agentnet_search_clawhub",
-]
+from agentnet_cli.integrations.hermes import handlers, register
+from agentnet_cli.integrations.hermes.schemas import SCHEMAS
 
 
-def test_schemas_has_all_tools():
-    assert len(SCHEMAS) == 9
-    names = [s["name"] for s in SCHEMAS]
-    assert names == EXPECTED_TOOL_NAMES
+def test_schemas_only_search():
+    assert [s["name"] for s in SCHEMAS] == ["agentnet_search"]
 
 
 def test_schemas_use_parameters_not_input_schema():
@@ -35,49 +21,60 @@ def test_schemas_use_parameters_not_input_schema():
 
 def test_handler_no_token(monkeypatch):
     monkeypatch.delenv("AGENTNET_TOKEN", raising=False)
-    monkeypatch.setattr("agentnet_cli.tools.hermes.handlers.load_config", lambda: None)
-    result = json.loads(handlers.agentnet_discover({"query": "test"}))
+    monkeypatch.setattr(
+        "agentnet_cli.integrations.hermes.handlers.get_credentials",
+        lambda: None,
+    )
+    result = json.loads(handlers.agentnet_search({"query": "test"}))
     assert "error" in result
     assert "setup" in result["error"].lower()
 
 
 def test_handler_returns_json(monkeypatch):
-    mock_handlers = MagicMock()
-    mock_handlers.discover.return_value = {"listings": []}
+    mock_actions = MagicMock()
+    mock_actions.search.return_value = {"results": []}
     monkeypatch.setattr(
-        "agentnet_cli.tools.hermes.handlers._get_handlers",
-        lambda: mock_handlers,
+        "agentnet_cli.integrations.hermes.handlers._get_actions",
+        lambda: mock_actions,
     )
-    result = handlers.agentnet_discover({"query": "weather"})
+    result = handlers.agentnet_search({"query": "weather"})
     parsed = json.loads(result)
-    assert parsed == {"listings": []}
-    mock_handlers.discover.assert_called_once_with(query="weather")
+    assert parsed == {"results": []}
+    mock_actions.search.assert_called_once_with(query="weather")
 
 
 def test_handler_catches_exceptions(monkeypatch):
-    mock_handlers = MagicMock()
-    mock_handlers.discover.side_effect = RuntimeError("network down")
+    mock_actions = MagicMock()
+    mock_actions.search.side_effect = RuntimeError("network down")
     monkeypatch.setattr(
-        "agentnet_cli.tools.hermes.handlers._get_handlers",
-        lambda: mock_handlers,
+        "agentnet_cli.integrations.hermes.handlers._get_actions",
+        lambda: mock_actions,
     )
-    result = json.loads(handlers.agentnet_discover({"query": "test"}))
+    result = json.loads(handlers.agentnet_search({"query": "test"}))
     assert "error" in result
     assert "network down" in result["error"]
 
 
 def test_handler_uses_env_token(monkeypatch):
     monkeypatch.setenv("AGENTNET_TOKEN", "env-token-123")
-    monkeypatch.setattr("agentnet_cli.tools.hermes.handlers.load_config", lambda: None)
-    with patch("agentnet_cli.tools.hermes.handlers.ToolHandlers") as mock_cls:
+    with (
+        patch(
+            "agentnet_cli.integrations.hermes.handlers.get_credentials",
+            return_value=("env-token-123", "https://app.agentnet.market"),
+        ),
+        patch(
+            "agentnet_cli.integrations.hermes.handlers.make_platform_client",
+            return_value=MagicMock(),
+        ),
+        patch("agentnet_cli.integrations.hermes.handlers.ToolActions") as mock_cls,
+    ):
         mock_instance = MagicMock()
-        mock_instance.discover.return_value = {"ok": True}
+        mock_instance.search.return_value = {"ok": True}
         mock_cls.return_value = mock_instance
-        result = json.loads(handlers.agentnet_discover({"query": "test"}))
+        result = json.loads(handlers.agentnet_search({"query": "test"}))
         mock_cls.assert_called_once_with(
             platform_url="https://app.agentnet.market",
             api_token="env-token-123",
-            agent_id="",
         )
         assert result == {"ok": True}
 
@@ -97,10 +94,7 @@ def test_register_tools():
     ctx = MagicMock()
     register(ctx)
     tool_names = [c.kwargs["name"] for c in ctx.register_tool.call_args_list]
-    assert len(tool_names) == 9
-    assert "agentnet_discover" in tool_names
-    assert "agentnet_search" in tool_names
-    assert "agentnet_search_skills" in tool_names
+    assert tool_names == ["agentnet_search"]
     for c in ctx.register_tool.call_args_list:
         assert c.kwargs["toolset"] == "agentnet"
         assert "schema" in c.kwargs
@@ -117,29 +111,10 @@ def test_register_skill():
 
 
 def test_plugin_yaml_exists():
-    from agentnet_cli.tools.hermes import _PLUGIN_DIR
+    from agentnet_cli.integrations.hermes import _PLUGIN_DIR
 
-    plugin_yaml = _PLUGIN_DIR / "plugin.yaml"
-    assert plugin_yaml.exists()
-
-    import yaml
-
-    data = yaml.safe_load(plugin_yaml.read_text())
-    assert data["name"] == "agentnet"
-    assert len(data["provides_tools"]) >= 9
-
-
-def test_skill_md_exists():
-    from agentnet_cli.tools.hermes import _PLUGIN_DIR
-
-    skill_md = _PLUGIN_DIR / "skills" / "agentnet" / "SKILL.md"
-    assert skill_md.exists()
-    content = skill_md.read_text()
-    assert "agentnet_discover" in content
-    assert "Agent-net" in content
-
-
-def test_entry_point_importable():
-    import agentnet_cli.tools.hermes as hp
-
-    assert callable(hp.register)
+    yaml_path = _PLUGIN_DIR / "plugin.yaml"
+    assert yaml_path.is_file()
+    text = yaml_path.read_text(encoding="utf-8")
+    assert "agentnet_search" in text
+    assert "agentnet_discover" not in text

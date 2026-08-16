@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agentnet": {
+      "command": "agentnet",
+      "args": ["mcp-serve"]
+    }
+  }
+}

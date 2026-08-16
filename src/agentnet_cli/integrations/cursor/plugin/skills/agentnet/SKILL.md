@@ -3,7 +3,7 @@ name: agentnet
 description: >-
   Before building a non-trivial capability from scratch (auth, tests, security review,
   deployment, data/PDF parsing, scraping, CI/CD, integrations), find an existing AgentNet
-  agent or skill that already does it. Search with agentnet_discover_agents first; skip for
+  agent or skill that already does it. Search with agentnet_search first; skip for
   trivial edits or conversational turns.
 ---
 
@@ -16,15 +16,21 @@ agent or skill often already does it — surface that instead of reinventing it.
 ## When to use
 Before you implement something substantive — authentication, tests, a security review, a
 deployment pipeline, PDF/data parsing, web scraping, CI/CD, a third-party integration — call
-`agentnet_discover_agents` (or `agentnet_search`) with the capability you're about to build.
-Skip it for trivial edits, questions, or conversational turns.
+`agentnet_search` with the capability you're about to build.
+Skip it for trivial edits, questions, or purely conversational turns — no noise.
 
 ## How
-1. **Discover** — `agentnet_discover_agents` (agents + skills by capability) or `agentnet_search`
-   (unified) with a concrete description of what you're building.
+1. **Search** — `agentnet_search` with a concrete description of *what you're building*.
 2. **Surface** — briefly present the best match (name, what it does, how to use/install it),
-   then continue. Let the user choose; don't force it.
-3. **Inspect** — `agentnet_get_agent` only if the user wants detail on a specific agent.
+   then continue your work. Let the user choose; don't force it.
+
+## Tools
+
+### agentnet_search
+Search Agent-net for agents, skills, plugins, and listings.
+- **query** (string, required): the capability you're about to build
+- **type** (string, default "all"): all, agents, skills, plugins, listings, marketplace
+- **category** (string, optional) · **limit** (int, default 20)
 
 ## Guidelines
 - **Capability-first** — match on *what you're about to build*, not stray keywords.

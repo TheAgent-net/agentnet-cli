@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from ..infra.environments import Environment, detect_environments, local_environment
 from ..infra.paths import AgentName
 from .base import AgentConnector
 from .claude import ClaudeConnector
@@ -20,9 +22,18 @@ _CONNECTORS: dict[AgentName, type[AgentConnector]] = {
 }
 
 
-def get_connector(agent: AgentName) -> AgentConnector:
-    return _CONNECTORS[agent]()
+def get_connector(agent: AgentName, env: Environment | None = None) -> AgentConnector:
+    return _CONNECTORS[agent](env if env is not None else local_environment())
 
 
-def all_connectors() -> dict[AgentName, AgentConnector]:
-    return {name: cls() for name, cls in _CONNECTORS.items()}
+def all_connectors(
+    envs: list[Environment] | None = None,
+) -> list[tuple[AgentName, Environment, AgentConnector]]:
+    """Return (agent, env, connector) for every agent in every environment."""
+    if envs is None:
+        envs = detect_environments()
+    out: list[tuple[AgentName, Environment, AgentConnector]] = []
+    for env in envs:
+        for name, cls in _CONNECTORS.items():
+            out.append((name, env, cls(env)))
+    return out

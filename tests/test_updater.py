@@ -123,19 +123,19 @@ def test_check_pypi_latest_failure(mock_get):
     assert check_pypi_latest() is None
 
 
-@patch("agentnet_cli.cli.core.updater.subprocess.run")
-@patch("agentnet_cli.cli.core.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.run_tool")
+@patch("agentnet_cli.cli.core.updater.find_executable")
 def test_upgrade_command_uv_tool(mock_which, mock_run):
     """uv detected and agentnet-cli in tool list => uv tool upgrade."""
     mock_which.side_effect = lambda cmd: "/usr/bin/uv" if cmd == "uv" else None
     mock_run.return_value = MagicMock(stdout="agentnet-cli v0.1.0\nother-tool v2.0\n", returncode=0)
 
     cmd = _upgrade_command()
-    assert cmd == ["uv", "tool", "upgrade", "agentnet-cli"]
+    assert cmd == ["/usr/bin/uv", "tool", "upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.cli.core.updater.subprocess.run")
-@patch("agentnet_cli.cli.core.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.run_tool")
+@patch("agentnet_cli.cli.core.updater.find_executable")
 def test_upgrade_command_uv_no_false_positive(mock_which, mock_run):
     """uv tool list has 'my-agentnet-cli-fork' — should NOT match."""
     mock_which.side_effect = lambda cmd: "/usr/bin/uv" if cmd == "uv" else None
@@ -145,19 +145,19 @@ def test_upgrade_command_uv_no_false_positive(mock_which, mock_run):
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.cli.core.updater.subprocess.run")
-@patch("agentnet_cli.cli.core.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.run_tool")
+@patch("agentnet_cli.cli.core.updater.find_executable")
 def test_upgrade_command_pipx(mock_which, mock_run):
     """pipx detected => pipx upgrade."""
     mock_which.side_effect = lambda cmd: "/usr/bin/pipx" if cmd == "pipx" else None
     mock_run.return_value = MagicMock(stdout="agentnet-cli 0.1.0\n", returncode=0)
 
     cmd = _upgrade_command()
-    assert cmd == ["pipx", "upgrade", "agentnet-cli"]
+    assert cmd == ["/usr/bin/pipx", "upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.cli.core.updater.subprocess.run")
-@patch("agentnet_cli.cli.core.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.run_tool")
+@patch("agentnet_cli.cli.core.updater.find_executable")
 def test_upgrade_command_pip_fallback(mock_which, mock_run):
     """No uv or pipx — falls back to pip."""
     mock_which.return_value = None
@@ -246,16 +246,16 @@ def test_self_upgrade_exception(mock_run, mock_cmd):
     assert "command not found" in msg
 
 
-@patch("agentnet_cli.cli.core.updater.subprocess.run", side_effect=Exception("timeout"))
-@patch("agentnet_cli.cli.core.updater.shutil.which", return_value="/usr/bin/uv")
+@patch("agentnet_cli.cli.core.updater.run_tool", side_effect=Exception("timeout"))
+@patch("agentnet_cli.cli.core.updater.find_executable", return_value="/usr/bin/uv")
 def test_upgrade_command_uv_subprocess_error(mock_which, mock_run):
     """uv exists but subprocess fails — falls through to pip."""
     cmd = _upgrade_command()
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.cli.core.updater.subprocess.run")
-@patch("agentnet_cli.cli.core.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.run_tool")
+@patch("agentnet_cli.cli.core.updater.find_executable")
 def test_upgrade_command_uv_not_in_tool_list(mock_which, mock_run):
     """uv exists but agentnet-cli not in tool list — tries pipx then pip."""
     mock_which.side_effect = lambda cmd: "/usr/bin/uv" if cmd == "uv" else None
@@ -264,18 +264,17 @@ def test_upgrade_command_uv_not_in_tool_list(mock_which, mock_run):
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.cli.core.updater.subprocess.run")
-@patch("agentnet_cli.cli.core.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.run_tool", side_effect=Exception("timeout"))
+@patch("agentnet_cli.cli.core.updater.find_executable")
 def test_upgrade_command_pipx_subprocess_error(mock_which, mock_run):
     """pipx exists but subprocess fails — falls through to pip."""
     mock_which.side_effect = lambda cmd: "/usr/bin/pipx" if cmd == "pipx" else None
-    mock_run.side_effect = Exception("timeout")
     cmd = _upgrade_command()
     assert cmd == [sys.executable, "-m", "pip", "install", "--upgrade", "agentnet-cli"]
 
 
-@patch("agentnet_cli.cli.core.updater.subprocess.run")
-@patch("agentnet_cli.cli.core.updater.shutil.which")
+@patch("agentnet_cli.cli.core.updater.run_tool")
+@patch("agentnet_cli.cli.core.updater.find_executable")
 def test_upgrade_command_pipx_not_in_list(mock_which, mock_run):
     """pipx exists but agentnet-cli not installed via pipx — falls to pip."""
     mock_which.side_effect = lambda cmd: "/usr/bin/pipx" if cmd == "pipx" else None
@@ -309,12 +308,12 @@ def test_detect_install_method_pipx(mock_cmd):
 
 # ── run_update background path (the one maybe_auto_update / the worker uses) ──
 @patch("agentnet_cli.cli.core.updater.refresh_stale_connections", return_value=0)
-@patch("agentnet_cli.cli.core.updater.subprocess.Popen")
+@patch("agentnet_cli.cli.core.updater.start_detached_process")
 @patch("agentnet_cli.cli.core.updater._upgrade_command",
        return_value=["uv", "tool", "upgrade", "agentnet-cli"])
 @patch("agentnet_cli.cli.core.updater.check_pypi_latest", return_value="999.0.0")
 def test_run_update_background_spawns_installer_when_newer(
-    mock_pypi, mock_cmd, mock_popen, mock_refresh, fake_home, monkeypatch
+    mock_pypi, mock_cmd, mock_spawn, mock_refresh, fake_home, monkeypatch
 ):
     # Proves the update engine actually upgrades: newer version on PyPI -> self_upgrade spawns the
     # detected installer in the background and the check is recorded (which drives the 24h gate).
@@ -325,19 +324,19 @@ def test_run_update_background_spawns_installer_when_newer(
     result = run_update(quiet=True, background=True, force=True)
 
     assert result.upgrade_started is True
-    mock_popen.assert_called_once()
-    assert mock_popen.call_args.args[0] == ["uv", "tool", "upgrade", "agentnet-cli"]
+    mock_spawn.assert_called_once()
+    assert mock_spawn.call_args.args[0] == ["uv", "tool", "upgrade", "agentnet-cli"]
     assert get_last_update_check_at() is not None  # recorded -> rate-limit gate armed
 
 
 @patch("agentnet_cli.cli.core.updater.refresh_stale_connections", return_value=0)
-@patch("agentnet_cli.cli.core.updater.subprocess.Popen")
+@patch("agentnet_cli.cli.core.updater.start_detached_process")
 @patch("agentnet_cli.cli.core.updater.check_pypi_latest", return_value="999.0.0")
-def test_run_update_disabled_never_upgrades(mock_pypi, mock_popen, mock_refresh, fake_home, monkeypatch):
+def test_run_update_disabled_never_upgrades(mock_pypi, mock_spawn, mock_refresh, fake_home, monkeypatch):
     monkeypatch.setenv("AGENTNET_AUTO_UPDATE", "0")
     from agentnet_cli.cli.core.updater import run_update
     result = run_update(quiet=True, background=True, force=True)
-    mock_popen.assert_not_called()  # gate off -> no installer spawned
+    mock_spawn.assert_not_called()  # gate off -> no installer spawned
     assert result.upgrade_started is False
 
 

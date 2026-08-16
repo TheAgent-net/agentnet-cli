@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from ..infra.paths import AgentName, agent_config_root
+from ..infra.proc import find_executable, run_tool
 from .base import AgentConnector, ConnectionResult, DetectionResult
 
 _PLUGIN_NAME = "agentnet"
 
 
 def _hermes_plugin_source() -> Path:
-    from ..tools.hermes import _PLUGIN_DIR  # noqa: PLC0415
+    from ..infra.package_paths import bundled_hermes_plugin  # noqa: PLC0415
 
-    return _PLUGIN_DIR
+    return bundled_hermes_plugin()
 
 
 def _find_hermes_venv(root: Path) -> Path | None:
@@ -38,14 +38,17 @@ def _install_into_hermes_venv(venv: Path) -> bool:
         return False
 
     try:
-        if shutil.which("uv"):
-            subprocess.run(
-                ["uv", "pip", "install", "agentnet-cli", "--python", str(python)],
-                capture_output=True,
+        if find_executable("uv"):
+            run_tool(
+                "uv",
+                ["pip", "install", "agentnet-cli", "--python", str(python)],
                 timeout=120,
             )
         else:
-            subprocess.run(
+            # python itself is already an absolute path — run directly.
+            import subprocess  # noqa: PLC0415
+
+            subprocess.run(  # noqa: S603
                 [str(python), "-m", "pip", "install", "agentnet-cli"],
                 capture_output=True,
                 timeout=120,
@@ -56,20 +59,45 @@ def _install_into_hermes_venv(venv: Path) -> bool:
 
 
 class HermesConnector(AgentConnector):
+    """Offer Hermes only where detect() succeeds.
+
+    Skip cross-env Hermes in v1. The venv pip install and plugin copy need a local filesystem.
+    """
+
     def detect(self) -> DetectionResult:
-        root = agent_config_root(AgentName.HERMES)
+        # Skip cross-env Hermes entirely in v1 (venv + plugin install are local-fs only).
+        if self.env.kind != "local":
+            return DetectionResult(
+                agent_name=AgentName.HERMES,
+                detected=False,
+                env_key=self.env.key,
+                env_label=self.env.label,
+            )
+        root = agent_config_root(AgentName.HERMES, self.env)
         if not root.exists():
-            return DetectionResult(agent_name=AgentName.HERMES, detected=False)
+            return DetectionResult(
+                agent_name=AgentName.HERMES,
+                detected=False,
+                env_key=self.env.key,
+                env_label=self.env.label,
+            )
         if (root / "config.yaml").exists():
             return DetectionResult(
                 agent_name=AgentName.HERMES,
                 detected=True,
                 config_root=root,
+                env_key=self.env.key,
+                env_label=self.env.label,
             )
-        return DetectionResult(agent_name=AgentName.HERMES, detected=False)
+        return DetectionResult(
+            agent_name=AgentName.HERMES,
+            detected=False,
+            env_key=self.env.key,
+            env_label=self.env.label,
+        )
 
     def connect(self, platform_config: dict[str, Any]) -> ConnectionResult:
-        root = agent_config_root(AgentName.HERMES)
+        root = agent_config_root(AgentName.HERMES, self.env)
         config_path = root / "config.yaml"
         plugin_dir = root / "plugins" / _PLUGIN_NAME
 
@@ -98,7 +126,7 @@ class HermesConnector(AgentConnector):
 
         data: dict[str, Any] = {}
         if config_path.exists():
-            data = yaml.safe_load(config_path.read_text()) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
         plugins = data.setdefault("plugins", {})
         enabled = plugins.setdefault("enabled", [])
@@ -107,12 +135,14 @@ class HermesConnector(AgentConnector):
 
         self._cleanup_legacy(data, root)
 
-        config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        config_path.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
 
-        # Every-prompt skill-fire hooks (config.yaml `hooks:` + scoped consent allowlist).
         from .hermes_hook import install as install_hooks
 
-        install_hooks()
+        install_hooks(self.env)
 
         return ConnectionResult(
             success=True,
@@ -126,9 +156,9 @@ class HermesConnector(AgentConnector):
     def disconnect(self, connection_manifest: dict[str, Any]) -> bool:
         from .hermes_hook import uninstall as uninstall_hooks
 
-        uninstall_hooks()
+        uninstall_hooks(self.env)
 
-        root = agent_config_root(AgentName.HERMES)
+        root = agent_config_root(AgentName.HERMES, self.env)
         config_path = root / "config.yaml"
 
         mcp_info = connection_manifest.get("mcp_registered", {})
@@ -146,14 +176,17 @@ class HermesConnector(AgentConnector):
             shutil.rmtree(skill_dir)
 
         if config_path.exists():
-            data = yaml.safe_load(config_path.read_text()) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             plugins = data.get("plugins", {})
             if isinstance(plugins, dict):
                 enabled = plugins.get("enabled", [])
                 if isinstance(enabled, list) and _PLUGIN_NAME in enabled:
                     enabled.remove(_PLUGIN_NAME)
             self._cleanup_legacy(data, root)
-            config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+            config_path.write_text(
+                yaml.dump(data, default_flow_style=False, sort_keys=False),
+                encoding="utf-8",
+            )
 
         return True
 

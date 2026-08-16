@@ -11,8 +11,8 @@ from agentnet_cli.tools import cursor_hook, skillfire
 runner = CliRunner()
 _ENV = skillfire.SUBAGENT_ENV
 _CACHE = "agentnet_cli.tools.skillfire.session.cache_path"
-_POPEN = "agentnet_cli.tools.skillfire.worker.subprocess.Popen"
-_WHICH = "agentnet_cli.tools.skillfire.worker.shutil.which"
+_POPEN = "agentnet_cli.tools.skillfire.worker.start_detached_process"
+_WHICH = "agentnet_cli.tools.skillfire.worker.agentnet_invocation"
 
 
 def _cache(outcome, final=True):
@@ -28,7 +28,7 @@ def _stdin(monkeypatch, obj):
 def test_cursor_pre_spawns_and_allows(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv(_ENV, raising=False)
     monkeypatch.setattr(_CACHE, lambda s: tmp_path / "s.json")
-    monkeypatch.setattr(_WHICH, lambda n: "/usr/bin/agentnet")
+    monkeypatch.setattr(_WHICH, lambda: ["/usr/bin/agentnet"])
     captured = {}
     monkeypatch.setattr(_POPEN, lambda args, **kw: captured.setdefault("args", args) or MagicMock())
     _stdin(monkeypatch, {"conversation_id": "c1", "prompt": "add jwt auth to my api"})
@@ -54,7 +54,7 @@ def test_cursor_pre_skips_own_followup(monkeypatch, capsys):
 def test_cursor_pre_spawns_one_across_duplicates(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv(_ENV, raising=False)
     monkeypatch.setattr(_CACHE, lambda s: tmp_path / "s.json")
-    monkeypatch.setattr(_WHICH, lambda n: "/usr/bin/agentnet")
+    monkeypatch.setattr(_WHICH, lambda: ["/usr/bin/agentnet"])
     spawns = []
     monkeypatch.setattr(_POPEN, lambda args, **kw: spawns.append(args) or MagicMock())
     for _ in range(2):  # duplicate registrations for the same prompt
@@ -185,6 +185,8 @@ def test_connector_only_claims_its_own_command():
     # Parsed ownership, not a prefix: never swallow an unrelated user hook on install/uninstall.
     assert conn._is_agentnet_cmd("agentnet cursor-hook --pre")
     assert conn._is_agentnet_cmd("/usr/local/bin/agentnet cursor-hook --peek")
+    assert conn._is_agentnet_cmd(r"C:\Tools\agentnet.exe cursor-hook --pre")
+    assert conn._is_agentnet_cmd("wsl.exe -d Ubuntu -- /usr/bin/agentnet cursor-hook --peek")
     assert not conn._is_agentnet_cmd("agentnet cursor-hook-wrapper --pre")  # different sub-command
     assert not conn._is_agentnet_cmd("agentnet-helper cursor-hook --pre")  # different binary
     assert not conn._is_agentnet_cmd("agentnet skill-hook --pre")  # the Claude hook, not ours
@@ -194,7 +196,7 @@ def test_connector_only_claims_its_own_command():
 
 def test_connector_install_idempotent_then_uninstall(tmp_path, monkeypatch):
     hooks_path = tmp_path / ".cursor" / "hooks.json"
-    monkeypatch.setattr("agentnet_cli.connectors.cursor_hook._hooks_path", lambda: hooks_path)
+    monkeypatch.setattr("agentnet_cli.connectors.cursor_hook._hooks_path", lambda *a, **k: hooks_path)
 
     changed, _ = conn.install()
     assert changed
@@ -216,7 +218,7 @@ def test_connector_install_preserves_existing_hooks(tmp_path, monkeypatch):
     hooks_path.write_text(json.dumps(
         {"version": 1, "hooks": {"stop": [{"command": "user-thing", "type": "command"}]}}
     ))
-    monkeypatch.setattr("agentnet_cli.connectors.cursor_hook._hooks_path", lambda: hooks_path)
+    monkeypatch.setattr("agentnet_cli.connectors.cursor_hook._hooks_path", lambda *a, **k: hooks_path)
     conn.install()
     stop = json.loads(hooks_path.read_text())["hooks"]["stop"]
     assert any(e["command"] == "user-thing" for e in stop)  # existing kept

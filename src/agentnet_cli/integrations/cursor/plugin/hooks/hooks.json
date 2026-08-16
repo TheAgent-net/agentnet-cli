@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "test -f ~/.agentnet/config.json || echo '[AgentNet] Not authenticated. Run: agentnet setup' >&2"
+      },
+      {
+        "command": "agentnet update --quiet 2>/dev/null || true"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "agentnet cursor-hook --pre"
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "agentnet cursor-hook --peek"
+      }
+    ],
+    "stop": [
+      {
+        "command": "agentnet cursor-hook --post"
+      }
+    ]
+  }
+}
