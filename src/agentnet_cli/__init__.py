@@ -1,3 +1,5 @@
+"""Agent-net CLI package for connecting local agents to the platform."""
+
 from importlib.metadata import PackageNotFoundError, version
 
 try:

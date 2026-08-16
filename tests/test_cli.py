@@ -174,10 +174,19 @@ def test_connect_unknown_agent(fake_home):
     assert "Unknown agent" in result.stdout or "unknown" in result.stdout.lower()
 
 
-def test_connect_not_registered(fake_home):
-    """Connect without prior registration — shows 'Not registered' error."""
-    result = runner.invoke(app, ["connect", "claude"])
-    assert result.exit_code != 0 or "not registered" in result.stdout.lower()
+def test_connect_without_registration_is_allowed(fake_home):
+    """Connect bootstraps a guest token when none exists."""
+    with patch(
+        "agentnet_cli.cli.core.connect.ensure_guest_credentials",
+        return_value={"api_token": "guest", "tier": "guest"},
+    ), \
+         patch("agentnet_cli.cli.core.connect.detect_all", return_value=[]), \
+         patch("agentnet_cli.cli.core.connect.detect_environments", return_value=[]), \
+         patch("agentnet_cli.cli.core.connect.resolve_env_filter", return_value=[]):
+        result = runner.invoke(app, ["connect", "--all"])
+
+    assert result.exit_code == 0
+    assert "not registered" not in result.stdout.lower()
 
 
 def test_dev_flag_sets_development_env(fake_home):
@@ -186,37 +195,100 @@ def test_dev_flag_sets_development_env(fake_home):
     assert os.environ.get("AGENTNET_ENV") == "development"
 
 
-def test_setup_registers_when_missing_config(fake_home):
-    with patch("agentnet_cli.cli.core.setup_wizard.register_command") as register, \
-         patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=[]), \
+def test_setup_connects_before_optional_register(fake_home):
+    """Setup wires harnesses first, then offers optional sign-in."""
+    detections = [
+        DetectionResult(agent_name="claude", detected=True),
+        DetectionResult(agent_name="cursor", detected=False),
+    ]
+    with patch(
+        "agentnet_cli.cli.core.setup_wizard.ensure_guest_credentials",
+        return_value={"api_token": "guest", "tier": "guest"},
+    ), \
+         patch("agentnet_cli.cli.core.setup_wizard.register_command") as register, \
+         patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
          patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
-        result = runner.invoke(app, ["setup", "--url", "http://localhost:8006"])
+        result = runner.invoke(
+            app, ["setup", "--url", "http://localhost:8006"], input="y\n",
+        )
 
     assert result.exit_code == 0
+    connect.assert_called_once_with(connect_all=True, env_filter=None, no_mirror=False)
     register.assert_called_once()
     assert register.call_args.kwargs["platform_url"] == "http://localhost:8006"
     assert register.call_args.kwargs["auto_visibility"] == "private"
     assert register.call_args.kwargs["auto_agent_name"]
+    # Connect step text appears before the optional sign-in step.
+    connect_pos = result.stdout.find("Configuring all detected agents")
+    signin_pos = result.stdout.find("Sign in to AgentNet (optional)")
+    assert connect_pos != -1 and signin_pos != -1 and connect_pos < signin_pos
+
+
+def test_setup_can_skip_sign_in(fake_home):
+    with patch(
+        "agentnet_cli.cli.core.setup_wizard.ensure_guest_credentials",
+        return_value={"api_token": "guest", "tier": "guest"},
+    ), \
+         patch("agentnet_cli.cli.core.setup_wizard.register_command") as register, \
+         patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=[]), \
+         patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
+        result = runner.invoke(app, ["setup"], input="n\n")
+
+    assert result.exit_code == 0
     connect.assert_not_called()
+    register.assert_not_called()
+    assert "Skipped" in result.stdout
 
 
 def test_setup_connects_all_detected_agents_by_default(fake_home):
     from agentnet_cli.infra.config import save_config
 
-    save_config({"api_token": "tok", "platform_url": "https://x", "org_id": "o", "agent_id": "a"})
+    save_config({
+        "api_token": "tok",
+        "platform_url": "https://x",
+        "org_id": "o",
+        "agent_id": "a",
+        "tier": "authenticated",
+    })
     detections = [
         DetectionResult(agent_name="claude", detected=True),
         DetectionResult(agent_name="cursor", detected=False),
     ]
 
-    with patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
+    with patch(
+        "agentnet_cli.cli.core.setup_wizard.ensure_guest_credentials",
+        return_value={
+            "api_token": "tok",
+            "platform_url": "https://x",
+            "tier": "authenticated",
+        },
+    ), \
+         patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
          patch("agentnet_cli.cli.core.setup_wizard.connect_command") as connect:
         result = runner.invoke(app, ["setup"])
 
     assert result.exit_code == 0
     assert "Claude" in result.stdout
     assert "will configure" in result.stdout
-    connect.assert_called_once_with(connect_all=True)
+    connect.assert_called_once_with(connect_all=True, env_filter=None, no_mirror=False)
+    assert "Already signed in" in result.stdout
+
+
+def test_setup_guest_token_still_offers_sign_in(fake_home):
+    detections = [DetectionResult(agent_name="claude", detected=True)]
+    with patch(
+        "agentnet_cli.cli.core.setup_wizard.ensure_guest_credentials",
+        return_value={"api_token": "guest", "tier": "guest"},
+    ), \
+         patch("agentnet_cli.cli.core.setup_wizard.register_command") as register, \
+         patch("agentnet_cli.cli.core.setup_wizard.detect_all", return_value=detections), \
+         patch("agentnet_cli.cli.core.setup_wizard.connect_command"):
+        result = runner.invoke(app, ["setup"], input="n\n")
+
+    assert result.exit_code == 0
+    assert "Guest API token ready" in result.stdout
+    assert "Sign in to AgentNet (optional)" in result.stdout
+    register.assert_not_called()
 
 
 def test_setup_can_select_individual_detected_agent(fake_home):
@@ -233,7 +305,7 @@ def test_setup_can_select_individual_detected_agent(fake_home):
         result = runner.invoke(app, ["setup", "--choose"], input="2\n1\n")
 
     assert result.exit_code == 0
-    connect.assert_called_once_with(agent_name="claude")
+    connect.assert_called_once_with(agent_name="claude", env_filter=None, no_mirror=False)
 
 
 def test_setup_individual_mode_defaults_to_no_agents(fake_home):

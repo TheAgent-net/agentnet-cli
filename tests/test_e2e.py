@@ -24,6 +24,15 @@ def _setup_agents(home: Path) -> None:
     (home / ".openclaw" / "openclaw.json").write_text("{}")
 
 
+def _tool_patches():
+    return (
+        patch("agentnet_cli.connectors.claude.find_executable", return_value="/usr/bin/claude"),
+        patch("agentnet_cli.connectors.claude.run_tool", side_effect=_mock_run_ok),
+        patch("agentnet_cli.connectors.openclaw.find_executable", return_value="/usr/bin/openclaw"),
+        patch("agentnet_cli.connectors.openclaw.run_tool", side_effect=_mock_run_ok),
+    )
+
+
 def test_full_detect_connect_disconnect_cycle(fake_home):
     _setup_agents(fake_home)
 
@@ -42,8 +51,7 @@ def test_full_detect_connect_disconnect_cycle(fake_home):
     assert "openclaw" in result.stdout.lower()
 
     # Connect claude (subprocess calls mocked)
-    with patch("shutil.which", return_value="/usr/bin/claude"), \
-         patch("subprocess.run", side_effect=_mock_run_ok):
+    with _tool_patches()[0], _tool_patches()[1], _tool_patches()[2], _tool_patches()[3]:
         result = runner.invoke(app, ["connect", "claude"])
     assert result.exit_code == 0
     assert "connected" in result.stdout.lower()
@@ -53,8 +61,7 @@ def test_full_detect_connect_disconnect_cycle(fake_home):
     assert result.exit_code == 0
 
     # Disconnect
-    with patch("shutil.which", return_value="/usr/bin/claude"), \
-         patch("subprocess.run", side_effect=_mock_run_ok):
+    with _tool_patches()[0], _tool_patches()[1], _tool_patches()[2], _tool_patches()[3]:
         result = runner.invoke(app, ["disconnect", "claude"])
     assert result.exit_code == 0
     assert "disconnected" in result.stdout.lower()
@@ -69,15 +76,15 @@ def test_connect_all_and_disconnect_all(fake_home):
         "wallet_id": "wal_1",
     })
 
-    with patch("shutil.which", return_value="/usr/bin/claude"), \
-         patch("subprocess.run", side_effect=_mock_run_ok):
+    p0, p1, p2, p3 = _tool_patches()
+    with p0, p1, p2, p3:
         result = runner.invoke(app, ["connect", "--all"])
     assert result.exit_code == 0
     assert "claude" in result.stdout.lower()
     assert "cursor" in result.stdout.lower()
     assert "openclaw" in result.stdout.lower()
 
-    with patch("shutil.which", return_value="/usr/bin/claude"), \
-         patch("subprocess.run", side_effect=_mock_run_ok):
+    p0, p1, p2, p3 = _tool_patches()
+    with p0, p1, p2, p3:
         result = runner.invoke(app, ["disconnect", "--all"])
     assert result.exit_code == 0

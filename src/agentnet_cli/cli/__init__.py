@@ -1,1 +1,1 @@
-"""CLI entry point and command modules."""
+"""CLI entry point and command modules for agentnet."""
