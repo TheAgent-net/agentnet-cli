@@ -54,7 +54,7 @@ def test_summarize_skill_single_file():
     raw = "<SKILL.md>\n---\nname: solo\ndescription: does solo\n---\n# body\nstuff\n</SKILL.md>\n"
     out = content.summarize_skill(raw, slug="solo", desc_hint="")
     assert out.startswith("solo — does solo")
-    m = re.search(r"(\S+/SKILL\.md)", out)
+    m = re.search(r"(\S+[/\\]SKILL\.md)", out)
     assert m and Path(m.group(1)).read_text().strip().endswith("stuff")  # body on disk
     assert "# body" not in out.split("on disk")[0]  # body not inlined into the header
 
