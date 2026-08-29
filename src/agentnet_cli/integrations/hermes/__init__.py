@@ -1,27 +1,26 @@
+"""Hermes plugin entry for Agent-net."""
+
 from __future__ import annotations
 
 from pathlib import Path
+
+from agentnet_cli.tools.tool_defs import TOOL_ACTIONS
 
 from . import handlers, schemas
 
 _PLUGIN_DIR = Path(__file__).resolve().parent
 
 _HANDLER_MAP = {
-    "agentnet_discover": handlers.agentnet_discover,
-    "agentnet_discover_agents": handlers.agentnet_discover_agents,
     "agentnet_search": handlers.agentnet_search,
-    "agentnet_get_agent": handlers.agentnet_get_agent,
-    "agentnet_search_skills": handlers.agentnet_search_skills,
-    "agentnet_discover_skills": handlers.agentnet_discover_skills,
-    "agentnet_search_skillsmp": handlers.agentnet_search_skillsmp,
-    "agentnet_search_claude_plugins": handlers.agentnet_search_claude_plugins,
-    "agentnet_search_clawhub": handlers.agentnet_search_clawhub,
 }
 
 
 def register(ctx):
+    """Register the Agent-net search tool and skill with Hermes."""
     for schema in schemas.SCHEMAS:
         name = schema["name"]
+        if name not in _HANDLER_MAP:
+            continue
         ctx.register_tool(
             name=name,
             toolset="agentnet",
@@ -35,3 +34,6 @@ def register(ctx):
             skill_md = child / "SKILL.md"
             if child.is_dir() and skill_md.exists():
                 ctx.register_skill(child.name, skill_md)
+
+
+__all__ = ["TOOL_ACTIONS", "register"]

@@ -114,7 +114,7 @@ def test_connect_installs_skill_to_skills_dir(fake_home):
     HermesConnector().connect({"api_token": "t", "platform_url": "https://x"})
     skill_md = d / "skills" / "agentnet" / "SKILL.md"
     assert skill_md.exists()
-    assert "agentnet_discover" in skill_md.read_text()
+    assert "agentnet_search" in skill_md.read_text()
 
 
 def test_disconnect_removes_skill_dir(fake_home):

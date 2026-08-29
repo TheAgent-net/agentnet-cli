@@ -1,1 +1,1 @@
-"""Per-agent connectors and file-injection templates."""
+"""Connectors for each agent and file-injection templates."""

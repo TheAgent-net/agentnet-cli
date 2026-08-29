@@ -12,8 +12,8 @@ runner = CliRunner()
 
 _ENV = skillfire.SUBAGENT_ENV
 _CACHE = "agentnet_cli.tools.skillfire.session.cache_path"
-_POPEN = "agentnet_cli.tools.skillfire.worker.subprocess.Popen"
-_WHICH = "agentnet_cli.tools.skillfire.worker.shutil.which"
+_POPEN = "agentnet_cli.tools.skillfire.worker.start_detached_process"
+_WHICH = "agentnet_cli.tools.skillfire.worker.agentnet_invocation"
 
 
 def _cache(outcome, final=True):
@@ -30,7 +30,7 @@ def test_pre_spawns_detached_worker_with_prompt(tmp_path, monkeypatch):
     monkeypatch.delenv(_ENV, raising=False)
     _stdin(monkeypatch, {"session_id": "s9", "prompt": "help me query a vector db"})
     monkeypatch.setattr(_CACHE, lambda s: tmp_path / "s.json")
-    monkeypatch.setattr(_WHICH, lambda n: "/usr/bin/agentnet")
+    monkeypatch.setattr(_WHICH, lambda: ["/usr/bin/agentnet"])
     captured = {}
     monkeypatch.setattr(_POPEN, lambda args, **kw: captured.setdefault("args", args) or MagicMock())
     claude_hook.run_claude_pre(limit=5, timeout=3.0)
@@ -44,7 +44,7 @@ def test_pre_spawns_one_worker_across_duplicate_hooks(tmp_path, monkeypatch):
     # settings.json + plugin => two parallel UserPromptSubmit hooks; only one worker may spawn.
     monkeypatch.delenv(_ENV, raising=False)
     monkeypatch.setattr(_CACHE, lambda s: tmp_path / "s.json")
-    monkeypatch.setattr(_WHICH, lambda n: "/usr/bin/agentnet")
+    monkeypatch.setattr(_WHICH, lambda: ["/usr/bin/agentnet"])
     spawns = []
     monkeypatch.setattr(_POPEN, lambda args, **kw: spawns.append(args) or MagicMock())
     for _ in range(2):  # two duplicate invocations for the same prompt
@@ -355,7 +355,7 @@ def test_cli_peek_reads_cache(tmp_path, monkeypatch):
 def test_cli_pre_spawns(tmp_path, monkeypatch):
     monkeypatch.delenv(_ENV, raising=False)
     monkeypatch.setattr(_POPEN, lambda *a, **k: MagicMock())
-    monkeypatch.setattr(_WHICH, lambda n: "agentnet")
+    monkeypatch.setattr(_WHICH, lambda: ["agentnet"])
     monkeypatch.setattr(_CACHE, lambda s: tmp_path / "s.json")
     result = runner.invoke(
         app, ["skill-hook", "--pre"], input=json.dumps({"session_id": "s", "prompt": "pdf"})

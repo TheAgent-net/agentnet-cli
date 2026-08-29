@@ -29,3 +29,15 @@ def test_connect_appends_toml(fake_home):
     toml_content = (fake_home / ".codex" / "config.toml").read_text()
     assert "[mcp_servers.agentnet]" in toml_content
     assert "default_tools_approval_mode" in toml_content
+
+
+def test_connect_mirrored_windows_env(windows_env):
+    root = windows_env.home / ".codex"
+    root.mkdir(parents=True)
+    (root / "config.toml").write_text("", encoding="utf-8")
+    c = CodexConnector(windows_env)
+    result = c.connect({"api_token": "t", "platform_url": "https://x"})
+    assert result.success
+    toml_content = (root / "config.toml").read_text(encoding="utf-8")
+    assert "[mcp_servers.agentnet]" in toml_content
+    assert "uvx" not in toml_content

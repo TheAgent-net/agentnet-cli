@@ -35,7 +35,7 @@ class AgentConnector(ABC):
 | File | Agent | MCP Config Path | Key Files Injected |
 |------|-------|----------------|-------------------|
 | `claude.py` | Claude Code | `~/.claude.json` | `skills/agentnet/SKILL.md`, `settings.json` perms |
-| `cursor.py` | Cursor | `~/.cursor/mcp.json` | `rules/agentnet.mdc`, `agents/agentnet.md` |
+| `cursor.py` | Cursor | `~/.cursor/mcp.json` | `plugins/local/agentnet/`, `rules/`, `agents/`, `hooks.json` |
 | `copilot.py` | GitHub Copilot | `~/.copilot/mcp-config.json` | `agents/agentnet.agent.md` |
 | `codex.py` | OpenAI Codex | `~/.codex/config.toml` | `skills/agentnet/SKILL.md` |
 | `hermes.py` | Hermes (Nous) | `~/.hermes/config.yaml` | YAML merge under `mcp.servers` |

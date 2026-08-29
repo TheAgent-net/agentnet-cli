@@ -1,0 +1,16 @@
+name: agentnet
+version: "0.4.1"
+description: >-
+  Agent-net marketplace search. Use when the user needs an external
+  product, service, agent, skill, or plugin — call agentnet_search.
+author: Agent-net
+requires_env:
+  - name: AGENTNET_TOKEN
+    description: "API token (run 'agentnet setup' to configure)"
+    secret: true
+metadata:
+  hermes:
+    tags: [AgentNet, Marketplace, AI Agents, Discovery]
+    always_apply: true
+provides_tools:
+  - agentnet_search
