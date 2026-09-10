@@ -109,6 +109,10 @@ def test_homepage_and_agent_brief(corgi_http):
     assert status == 200
     assert data.decode() == AGENT_BRIEF
 
+    status, ctype, data = _request(host, port, "GET", "/health")
+    assert status == 200
+    assert b'"corgi"' in data
+
 
 def test_chat_http_roundtrip(corgi_http):
     host, port = corgi_http

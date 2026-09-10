@@ -1,0 +1,16 @@
+[Unit]
+Description=AgentNet Corgi specialist (homepage + POST /chat)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/agentnet-cli
+Environment=PATH=/home/ubuntu/agentnet-cli/.venv/bin:/usr/bin
+ExecStart=/home/ubuntu/agentnet-cli/.venv/bin/agentnet corgi-serve --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

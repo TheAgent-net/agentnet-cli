@@ -50,6 +50,9 @@ class CorgiHandler(BaseHTTPRequestHandler):
         if path in {"/agent", "/agent.txt"}:
             self._send(200, AGENT_BRIEF.encode(), "text/plain; charset=utf-8")
             return
+        if path == "/health":
+            self._send(200, b'{"ok":true,"service":"corgi"}', "application/json")
+            return
         if path in {"/", "/index.html", "/chat"}:
             target = STATIC / "index.html"
         else:
@@ -83,6 +86,7 @@ class CorgiHandler(BaseHTTPRequestHandler):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8765) -> None:
+    ThreadingHTTPServer.allow_reuse_address = True
     httpd = ThreadingHTTPServer((host, port), CorgiHandler)
     print(f"Corgi specialist http://{host}:{port}/  (chat POST /chat)", flush=True)
     httpd.serve_forever()
