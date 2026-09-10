@@ -62,3 +62,14 @@ fi
 echo "Corgi specialist is up on 127.0.0.1:8765"
 curl -sS http://127.0.0.1:8765/health
 echo
+
+# DNS already points here (A 54.89.43.219). Issue a dedicated cert so
+# browsers stop seeing the composio.agentnet.it.com Let's Encrypt name.
+if command -v certbot >/dev/null 2>&1; then
+  sudo certbot --nginx -d corgi.agentnet.it.com --non-interactive --agree-tos \
+    --register-unsafely-without-email --redirect || true
+fi
+
+echo "Public check (may fail until cert + vhost are live):"
+curl -sSI https://corgi.agentnet.it.com/health || true
+echo
