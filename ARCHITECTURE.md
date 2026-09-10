@@ -18,6 +18,8 @@ agentnet-cli/
 │   │   ├── client.py        # PlatformClient
 │   │   ├── catalogs/        # ClawHub, Claude marketplace HTTP clients
 │   │   └── skills/          # skills.sh, SkillsMP, AI discovery
+│   ├── partners/            # Partner microsites + specialized bots
+│   │   └── corgi/           # Corgi homepage + POST /chat specialist
 │   └── tools/               # Agent tool surface (MCP + Hermes)
 │       ├── handlers.py      # ToolHandlers implementation
 │       ├── mcp_server.py    # stdio JSON-RPC server
@@ -36,6 +38,7 @@ agentnet-cli/
 | **tools** | MCP/Hermes tool definitions exposed to connected agents |
 | **infra** | Local config (`~/.agentnet/`) and connection manifest |
 | **integrations** | Bundled plugin trees installed by Claude/OpenClaw connectors |
+| **partners** | Specialized partner bots (Corgi `corgi-serve` + homepage) |
 
 ## Public discovery surface
 
