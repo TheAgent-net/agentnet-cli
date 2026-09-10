@@ -8,7 +8,7 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
-- **Testing:** pytest (511 tests), pytest-cov
+- **Testing:** pytest (524 tests), pytest-cov
 - **CI:** GitHub Actions (lint + test matrix on 3.10/3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 
@@ -22,6 +22,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Layers:
 - `tools/` — MCP stdio server, Hermes plugin, and `skillfire/` (the every-prompt skill-fire pipeline)
 - `infra/` — config, paths, manifest
 - `src/agentnet_cli/integrations/` — Claude and OpenClaw native plugin trees (bundled in wheel)
+- `src/agentnet_cli/partners/` — partner microsites (Corgi homepage + specialized `/chat` bot)
 
 ## Key Commands
 
@@ -39,6 +40,7 @@ uv run agentnet --help           # Run locally
 - **Manifest rollback:** `manifest.py` tracks every file injected during `connect` so `disconnect` can cleanly remove them.
 - **Config persistence:** `~/.agentnet/config.json` stores platform credentials (0600 permissions). Agent custom paths stored separately.
 - **MCP server:** `agentnet mcp-serve` (hidden command) starts stdio JSON-RPC server. Agents launch this as a subprocess.
+- **Corgi specialist:** `agentnet corgi-serve` (hidden) serves an original rebuild of the public Corgi homepage plus `POST /chat` with the same session envelope as the Composio specialist. The bot maps Corgi packages/policies onto AgentNet (discovery-only MCP; Corgi as a marketplace agent; no bind/PII in the CLI).
 - **Marketplace commands:** All output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
 - **Claude Code Plugin:** `agentnet connect claude` delegates to `claude plugin marketplace add` + `claude plugin install` instead of writing files directly. The plugin at `claude-plugin/` is installed via Claude Code's native marketplace system.
 - **Hermes Plugin:** `agentnet connect hermes` copies the plugin to `~/.hermes/plugins/agentnet/` and skills to `~/.hermes/skills/agentnet/`, using Hermes's native plugin system.

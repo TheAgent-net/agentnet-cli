@@ -399,6 +399,17 @@ def hermes_hook(
         run_hermes_post(limit=limit, timeout=hook_timeout)
 
 
+@app.command(name="corgi-serve", hidden=True)
+def corgi_serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address"),
+    port: int = typer.Option(8765, "--port", help="Bind port"),
+) -> None:
+    """Serve the Corgi homepage specialist and POST /chat bot (internal)."""
+    from ..partners.corgi.server import serve as serve_corgi
+
+    serve_corgi(host=host, port=port)
+
+
 @app.command(name="enable-skill-fire")
 def enable_skill_fire(
     remove: bool = typer.Option(False, "--remove", help="Remove the hook instead of installing"),
