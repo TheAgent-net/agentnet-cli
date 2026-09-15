@@ -127,3 +127,43 @@ def test_disconnect_removes_all(fake_home):
     c.disconnect(manifest)
     assert not (fake_home / ".cursor" / "rules" / "agentnet.mdc").exists()
     assert not (fake_home / ".cursor" / "agents" / "agentnet.md").exists()
+
+
+def test_reconnect_keeps_composio_ownership(fake_home):
+    from agentnet_cli.infra.manifest import record_connection
+
+    _setup_cursor(fake_home)
+    c = CursorConnector()
+    first = c.connect({"api_token": "agn_test", "platform_url": "https://test.agentnet.market"})
+    record_connection(
+        "cursor",
+        files_created=first.files_created,
+        files_modified=[],
+        mcp_entry=first.mcp_entry,
+    )
+    second = c.connect({"api_token": "agn_test", "platform_url": "https://test.agentnet.market"})
+    assert second.mcp_entry["composio"]["owned"] is True
+    c.disconnect({
+        "files_created": [str(p) for p in second.files_created],
+        "files_modified": [],
+        "mcp_registered": second.mcp_entry,
+    })
+    data = json.loads((fake_home / ".cursor" / "mcp.json").read_text())
+    assert "composio" not in data.get("mcpServers", {})
+
+
+def test_disconnect_leaves_replaced_composio(fake_home):
+    _setup_cursor(fake_home)
+    c = CursorConnector()
+    result = c.connect({"api_token": "agn_test", "platform_url": "https://test.agentnet.market"})
+    mcp_path = fake_home / ".cursor" / "mcp.json"
+    data = json.loads(mcp_path.read_text())
+    data["mcpServers"]["composio"] = {"url": "https://example.invalid/mcp"}
+    mcp_path.write_text(json.dumps(data, indent=2) + "\n")
+    c.disconnect({
+        "files_created": [str(p) for p in result.files_created],
+        "files_modified": [],
+        "mcp_registered": result.mcp_entry,
+    })
+    leftover = json.loads(mcp_path.read_text())
+    assert leftover["mcpServers"]["composio"]["url"] == "https://example.invalid/mcp"

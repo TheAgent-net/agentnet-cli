@@ -7,9 +7,15 @@ from pathlib import Path
 from typing import Any
 
 from ..infra.package_paths import bundled_claude_marketplace
-from ..infra.paths import AgentName, agent_config_root
+from ..infra.paths import AgentName, agent_config_root, claude_mcp_json
 from .base import AgentConnector, ConnectionResult, DetectionResult
-from .composio_mcp import composio_owned, merge_json_file, stamp, unmerge_json_file
+from .composio_mcp import (
+    composio_owned,
+    merge_json_file,
+    prior_owned,
+    stamp,
+    unmerge_json_file,
+)
 
 _PLUGIN_ID = "agentnet@agentnet-cli"
 _SUBPROCESS_TIMEOUT = 120
@@ -34,7 +40,7 @@ class ClaudeConnector(AgentConnector):
         for vf in ["settings.json"]:
             if (root / vf).exists():
                 return DetectionResult(agent_name=AgentName.CLAUDE, detected=True, config_root=root)
-        claude_json = root.parent / ".claude.json"
+        claude_json = claude_mcp_json()
         if claude_json.exists():
             return DetectionResult(agent_name=AgentName.CLAUDE, detected=True, config_root=root)
         return DetectionResult(agent_name=AgentName.CLAUDE, detected=False)
@@ -94,8 +100,16 @@ class ClaudeConnector(AgentConnector):
 
         self._cleanup_legacy()
 
-        claude_json = agent_config_root(AgentName.CLAUDE).parent / ".claude.json"
-        owned = merge_json_file(claude_json, servers_key="mcpServers")
+        claude_json = claude_mcp_json()
+        try:
+            owned = merge_json_file(
+                claude_json,
+                servers_key="mcpServers",
+                previously_owned=prior_owned(AgentName.CLAUDE.value),
+            )
+        except OSError as exc:
+            errors.append(f"composio MCP registration skipped: {exc}")
+            owned = False
 
         return ConnectionResult(
             success=True,
@@ -143,7 +157,7 @@ class ClaudeConnector(AgentConnector):
             if skill_dir.exists() and not any(skill_dir.iterdir()):
                 skill_dir.rmdir()
 
-        claude_json = root.parent / ".claude.json"
+        claude_json = claude_mcp_json()
         if claude_json.exists():
             try:
                 data = json.loads(claude_json.read_text())

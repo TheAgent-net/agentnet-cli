@@ -52,6 +52,24 @@ def test_unmerge_only_when_owned():
     assert "agentnet" in servers
 
 
+def test_unmerge_leaves_replaced_entry():
+    servers = {"composio": {"url": "https://example.invalid/mcp"}}
+    unmerge_mapping(servers, owned=True)
+    assert servers["composio"]["url"] == "https://example.invalid/mcp"
+
+
+def test_merge_mapping_reconnect_keeps_ownership():
+    servers = {"composio": {"url": COMPOSIO_MCP_URL}}
+    assert merge_mapping(servers, previously_owned=True) is True
+    assert servers["composio"]["url"] == COMPOSIO_MCP_URL
+
+
+def test_merge_mapping_reconnect_drops_replaced_entry():
+    servers = {"composio": {"url": "https://example.invalid/mcp"}}
+    assert merge_mapping(servers, previously_owned=True) is False
+    assert servers["composio"]["url"] == "https://example.invalid/mcp"
+
+
 def test_stamp_and_owned():
     entry = stamp({"scope": "global"}, owned=True, file="/tmp/mcp.json")
     assert composio_owned(entry) is True
@@ -77,3 +95,17 @@ def test_merge_json_file_preserves_malformed(tmp_path: Path):
     path.write_text("{not json")
     assert merge_json_file(path, servers_key="mcpServers") is False
     assert path.read_text() == "{not json"
+
+
+def test_merge_json_file_write_failure_is_not_owned(tmp_path: Path, monkeypatch):
+    path = tmp_path / "mcp.json"
+    original = Path.write_text
+
+    def boom(self, *args, **kwargs):
+        if self == path:
+            raise OSError("read-only")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", boom)
+    assert merge_json_file(path, servers_key="mcpServers") is False
+    assert not path.exists()

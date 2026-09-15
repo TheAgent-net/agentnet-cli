@@ -5,7 +5,7 @@ layer for GitHub, Slack, Linear, and 1000+ other apps. Connectors merge a
 `composio` entry pointing at https://connect.composio.dev/mcp — they never wrap
 COMPOSIO_* tools inside `agentnet mcp-serve`, and they never store third-party
 OAuth tokens. Skip the merge when the user already has a `composio` server, and
-disconnect only removes an entry this CLI added.
+disconnect only removes an entry this CLI added *and* that still matches our URL.
 
 Official plugin shape (ComposioHQ/composio-mcp-plugin):
 
@@ -37,19 +37,32 @@ def composio_http_entry() -> dict[str, str]:
     return {"url": COMPOSIO_MCP_URL}
 
 
-def merge_mapping(servers: dict[str, Any]) -> bool:
-    """Insert the Composio HTTP MCP entry. Return True if this CLI added it."""
+def is_our_entry(value: Any) -> bool:
+    """True when the MCP entry is still the URL this CLI inserted."""
+    return isinstance(value, dict) and value.get("url") == COMPOSIO_MCP_URL
+
+
+def merge_mapping(servers: dict[str, Any], *, previously_owned: bool = False) -> bool:
+    """Insert the Composio HTTP MCP entry. Return True if this CLI owns it.
+
+    Reconnect: if we previously owned the key and it still matches our URL,
+    keep ownership so a later disconnect can remove it. A user-replaced URL
+    is not ours, even if the manifest still said owned.
+    """
     if not composio_enabled():
         return False
-    if COMPOSIO_SERVER_NAME in servers:
-        return False
-    servers[COMPOSIO_SERVER_NAME] = composio_http_entry()
-    return True
+    existing = servers.get(COMPOSIO_SERVER_NAME)
+    if existing is None:
+        servers[COMPOSIO_SERVER_NAME] = composio_http_entry()
+        return True
+    return previously_owned and is_our_entry(existing)
 
 
 def unmerge_mapping(servers: Any, *, owned: bool) -> None:
-    """Remove `composio` only when this CLI added it during connect."""
-    if owned and isinstance(servers, dict):
+    """Remove `composio` only when we added it and it still matches our URL."""
+    if not owned or not isinstance(servers, dict):
+        return
+    if is_our_entry(servers.get(COMPOSIO_SERVER_NAME)):
         servers.pop(COMPOSIO_SERVER_NAME, None)
 
 
@@ -77,10 +90,34 @@ def composio_owned(mcp_info: dict[str, Any] | None) -> bool:
     return bool(isinstance(composio, dict) and composio.get("owned"))
 
 
-def merge_json_file(path: Path, *, servers_key: str) -> bool:
-    """Merge Composio into a JSON MCP file. Return True if this CLI added it.
+def prior_owned(agent_name: str) -> bool:
+    """Whether a recorded connection for this agent still owns `composio`."""
+    from ..infra.manifest import load_manifest
 
-    Malformed JSON is left untouched (not owned).
+    conn = load_manifest().get("connections", {}).get(agent_name, {})
+    return composio_owned(conn.get("mcp_registered"))
+
+
+def prior_owned_files(agent_name: str) -> set[str]:
+    """Absolute paths where a previous connect recorded a CLI-owned composio."""
+    from ..infra.manifest import load_manifest
+
+    conn = load_manifest().get("connections", {}).get(agent_name, {})
+    info = (conn.get("mcp_registered") or {}).get("composio") or {}
+    if not isinstance(info, dict) or not info.get("owned"):
+        return set()
+    files = {str(p) for p in info.get("files") or [] if p}
+    if info.get("file"):
+        files.add(str(info["file"]))
+    return files
+
+
+def merge_json_file(
+    path: Path, *, servers_key: str, previously_owned: bool = False,
+) -> bool:
+    """Merge Composio into a JSON MCP file. Return True if this CLI owns it.
+
+    Malformed JSON and write failures are left untouched (not owned).
     """
     if not composio_enabled():
         return False
@@ -96,10 +133,15 @@ def merge_json_file(path: Path, *, servers_key: str) -> bool:
     servers = data.setdefault(servers_key, {})
     if not isinstance(servers, dict):
         return False
-    owned = merge_mapping(servers)
-    if owned:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2) + "\n")
+    had_key = COMPOSIO_SERVER_NAME in servers
+    owned = merge_mapping(servers, previously_owned=previously_owned)
+    if owned and not had_key:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, indent=2) + "\n")
+        except OSError:
+            servers.pop(COMPOSIO_SERVER_NAME, None)
+            return False
     return owned
 
 

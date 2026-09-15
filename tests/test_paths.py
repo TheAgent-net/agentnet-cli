@@ -12,6 +12,16 @@ def test_claude_config_root(tmp_path, monkeypatch):
     assert agent_config_root(AgentName.CLAUDE) == tmp_path / ".claude"
 
 
+def test_claude_mcp_json_is_home_level(tmp_path, monkeypatch):
+    from agentnet_cli.infra.paths import claude_mcp_json
+
+    monkeypatch.setattr("agentnet_cli.infra.paths.Path.home", lambda: tmp_path)
+    monkeypatch.setattr("agentnet_cli.infra.paths.sys.platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData"))
+    assert claude_mcp_json() == tmp_path / ".claude.json"
+    assert agent_config_root(AgentName.CLAUDE) == tmp_path / "AppData" / "Claude"
+
+
 def test_cursor_config_root(tmp_path, monkeypatch):
     monkeypatch.setattr("agentnet_cli.infra.paths.Path.home", lambda: tmp_path)
     assert agent_config_root(AgentName.CURSOR) == tmp_path / ".cursor"

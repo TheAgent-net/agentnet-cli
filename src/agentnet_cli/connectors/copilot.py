@@ -7,7 +7,7 @@ from typing import Any
 
 from ..infra.paths import AgentName, agent_config_root
 from .base import AgentConnector, ConnectionResult, DetectionResult
-from .composio_mcp import composio_owned, merge_mapping, stamp, unmerge_mapping
+from .composio_mcp import composio_owned, merge_mapping, prior_owned, stamp, unmerge_mapping
 from .shims import load_shim
 
 
@@ -92,7 +92,10 @@ class CopilotConnector(AgentConnector):
             data = json.loads(mcp_path.read_text())
         data.setdefault("mcpServers", {})
         data["mcpServers"]["agentnet"] = entry
-        owned = merge_mapping(data["mcpServers"])
+        owned = merge_mapping(
+            data["mcpServers"],
+            previously_owned=prior_owned(AgentName.COPILOT.value),
+        )
         mcp_path.parent.mkdir(parents=True, exist_ok=True)
         mcp_path.write_text(json.dumps(data, indent=2) + "\n")
         return stamp(

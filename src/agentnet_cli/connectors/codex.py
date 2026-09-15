@@ -13,7 +13,7 @@ import tomli_w
 
 from ..infra.paths import AgentName, agent_config_root
 from .base import AgentConnector, ConnectionResult, DetectionResult
-from .composio_mcp import composio_owned, merge_mapping, stamp, unmerge_mapping
+from .composio_mcp import composio_owned, merge_mapping, prior_owned, stamp, unmerge_mapping
 from .shims import load_shim
 
 
@@ -57,7 +57,10 @@ class CodexConnector(AgentConnector):
                 "args": ["mcp-serve"],
             })
         mcp_servers["agentnet"] = agentnet_entry
-        owned = merge_mapping(mcp_servers)
+        owned = merge_mapping(
+            mcp_servers,
+            previously_owned=prior_owned(AgentName.CODEX.value),
+        )
         toml_path.write_text(tomli_w.dumps(data))
 
         skill_dir = root / "skills" / "agentnet"

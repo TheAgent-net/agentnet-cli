@@ -13,6 +13,7 @@ from .composio_mcp import (
     composio_enabled,
     composio_owned,
     merge_mapping,
+    prior_owned,
     stamp,
     unmerge_mapping,
 )
@@ -115,13 +116,14 @@ class HermesConnector(AgentConnector):
         self._cleanup_legacy(data, root)
 
         owned = False
+        previously_owned = prior_owned(AgentName.HERMES.value)
         servers = data.get("mcp_servers")
         if isinstance(servers, dict):
-            owned = merge_mapping(servers)
+            owned = merge_mapping(servers, previously_owned=previously_owned)
         elif composio_enabled():
             servers = {}
             data["mcp_servers"] = servers
-            owned = merge_mapping(servers)
+            owned = merge_mapping(servers, previously_owned=previously_owned)
 
         config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 

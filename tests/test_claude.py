@@ -199,3 +199,22 @@ def test_disconnect_no_claude_binary(fake_home):
     with patch("shutil.which", return_value=None):
         ok = ClaudeConnector().disconnect({})
     assert ok
+
+
+def test_connect_writes_composio_under_home_not_appdata(fake_home, monkeypatch):
+    """Windows Claude config lives under APPDATA; ~/.claude.json is still home."""
+    appdata = fake_home / "AppData"
+    claude_root = appdata / "Claude"
+    claude_root.mkdir(parents=True)
+    (claude_root / "settings.json").write_text("{}")
+    monkeypatch.setattr("agentnet_cli.infra.paths.sys.platform", "win32")
+    monkeypatch.setenv("APPDATA", str(appdata))
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        result = ClaudeConnector().connect({"api_token": "t"})
+    assert result.success
+    home_json = fake_home / ".claude.json"
+    assert home_json.exists()
+    data = json.loads(home_json.read_text())
+    assert data["mcpServers"]["composio"]["url"] == "https://connect.composio.dev/mcp"
+    assert not (appdata / ".claude.json").exists()
