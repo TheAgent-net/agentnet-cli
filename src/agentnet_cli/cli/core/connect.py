@@ -63,6 +63,8 @@ def connect_command(agent_name: str | None = None, connect_all: bool = False) ->
             console.print(
                 f"  [green]✓[/green] {display} connected ({file_count} file{'s' if file_count != 1 else ''} created{mcp_info})"
             )
+            for err in result.errors:
+                console.print(f"  [yellow]![/yellow] {err}")
             succeeded += 1
         else:
             console.print(f"  [red]✗[/red] {display} failed: {', '.join(result.errors)}")
