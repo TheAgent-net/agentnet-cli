@@ -58,6 +58,26 @@ def test_connect_idempotent(fake_home):
     assert enabled.count("agentnet") == 1
 
 
+def test_connect_registers_composio_mcp(fake_home):
+    _setup_hermes(fake_home)
+    result = HermesConnector().connect({"api_token": "t", "platform_url": "https://x"})
+    data = yaml.safe_load((fake_home / ".hermes" / "config.yaml").read_text())
+    assert data["mcp_servers"]["composio"]["url"] == "https://connect.composio.dev/mcp"
+    assert result.mcp_entry["composio"]["owned"] is True
+
+
+def test_disconnect_removes_owned_composio(fake_home):
+    _setup_hermes(fake_home)
+    connector = HermesConnector()
+    result = connector.connect({"api_token": "t", "platform_url": "https://x"})
+    connector.disconnect({
+        "mcp_registered": result.mcp_entry,
+        "files_created": [str(p) for p in result.files_created],
+    })
+    data = yaml.safe_load((fake_home / ".hermes" / "config.yaml").read_text()) or {}
+    assert "composio" not in (data.get("mcp_servers") or {})
+
+
 def test_connect_returns_plugin_mcp_entry(fake_home):
     _setup_hermes(fake_home)
     result = HermesConnector().connect({"api_token": "t", "platform_url": "https://x"})
@@ -101,6 +121,7 @@ def test_connect_cleans_legacy_mcp_servers(fake_home):
     HermesConnector().connect({"api_token": "t", "platform_url": "https://x"})
     data = yaml.safe_load((d / "config.yaml").read_text())
     assert "agentnet" not in data.get("mcp_servers", {})
+    assert data["mcp_servers"]["composio"]["url"] == "https://connect.composio.dev/mcp"
     for toolsets in data.get("platform_toolsets", {}).values():
         assert "mcp-agentnet" not in toolsets
 

@@ -9,6 +9,14 @@ import yaml
 
 from ..infra.paths import AgentName, agent_config_root
 from .base import AgentConnector, ConnectionResult, DetectionResult
+from .composio_mcp import (
+    composio_enabled,
+    composio_owned,
+    merge_mapping,
+    prior_owned,
+    stamp,
+    unmerge_mapping,
+)
 
 _PLUGIN_NAME = "agentnet"
 
@@ -107,6 +115,16 @@ class HermesConnector(AgentConnector):
 
         self._cleanup_legacy(data, root)
 
+        owned = False
+        previously_owned = prior_owned(AgentName.HERMES.value)
+        servers = data.get("mcp_servers")
+        if isinstance(servers, dict):
+            owned = merge_mapping(servers, previously_owned=previously_owned)
+        elif composio_enabled():
+            servers = {}
+            data["mcp_servers"] = servers
+            owned = merge_mapping(servers, previously_owned=previously_owned)
+
         config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
         # Every-prompt skill-fire hooks (config.yaml `hooks:` + scoped consent allowlist).
@@ -117,10 +135,15 @@ class HermesConnector(AgentConnector):
         return ConnectionResult(
             success=True,
             files_created=files_created,
-            mcp_entry={
-                "scope": "plugin",
-                "plugin_dir": str(plugin_dir),
-            },
+            mcp_entry=stamp(
+                {
+                    "scope": "plugin",
+                    "plugin_dir": str(plugin_dir),
+                    "file": str(config_path),
+                },
+                owned=owned,
+                file=str(config_path),
+            ),
         )
 
     def disconnect(self, connection_manifest: dict[str, Any]) -> bool:
@@ -153,6 +176,10 @@ class HermesConnector(AgentConnector):
                 if isinstance(enabled, list) and _PLUGIN_NAME in enabled:
                     enabled.remove(_PLUGIN_NAME)
             self._cleanup_legacy(data, root)
+            unmerge_mapping(
+                data.get("mcp_servers"),
+                owned=composio_owned(mcp_info),
+            )
             config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
         return True

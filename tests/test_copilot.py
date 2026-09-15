@@ -28,11 +28,13 @@ def test_connect_creates_agent_md(fake_home):
 
 def test_connect_writes_mcp_config(fake_home):
     _setup_copilot(fake_home)
-    CopilotConnector().connect({"api_token": "t", "platform_url": "https://x"})
+    result = CopilotConnector().connect({"api_token": "t", "platform_url": "https://x"})
     mcp = fake_home / ".copilot" / "mcp-config.json"
     assert mcp.exists()
     data = json.loads(mcp.read_text())
     assert "agentnet" in data["mcpServers"]
+    assert data["mcpServers"]["composio"]["url"] == "https://connect.composio.dev/mcp"
+    assert result.mcp_entry["composio"]["owned"] is True
 
 
 def test_disconnect(fake_home):
@@ -57,6 +59,7 @@ def test_disconnect(fake_home):
     if mcp_path.exists():
         data = json.loads(mcp_path.read_text())
         assert "agentnet" not in data.get("mcpServers", {})
+        assert "composio" not in data.get("mcpServers", {})
 
 
 def test_disconnect_removes_empty_dirs(fake_home):

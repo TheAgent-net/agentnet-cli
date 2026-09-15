@@ -50,6 +50,15 @@ def agentnet_home() -> Path:
     return Path.home() / ".agentnet"
 
 
+def claude_mcp_json() -> Path:
+    """Claude Code's user-level MCP file is always ``~/.claude.json``.
+
+    This is independent of ``agent_config_root(CLAUDE)``, which on Windows is
+    ``%APPDATA%/Claude`` rather than ``~/.claude``.
+    """
+    return Path.home() / ".claude.json"
+
+
 def agent_config_root(agent: AgentName) -> Path:
     if agent == AgentName.CLAUDE and sys.platform == "win32":
         appdata = os.environ.get("APPDATA", "")

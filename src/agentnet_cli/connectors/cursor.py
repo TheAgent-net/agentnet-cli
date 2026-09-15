@@ -7,6 +7,7 @@ from typing import Any
 
 from ..infra.paths import AgentName, agent_config_root
 from .base import AgentConnector, ConnectionResult, DetectionResult
+from .composio_mcp import composio_owned, merge_mapping, prior_owned, stamp, unmerge_mapping
 from .shims import load_shim
 
 
@@ -81,7 +82,10 @@ class CursorConnector(AgentConnector):
             mcp_path = Path(mcp_file)
             if mcp_path.exists():
                 data = json.loads(mcp_path.read_text())
-                data.get("mcpServers", {}).pop("agentnet", None)
+                servers = data.get("mcpServers", {})
+                if isinstance(servers, dict):
+                    servers.pop("agentnet", None)
+                    unmerge_mapping(servers, owned=composio_owned(mcp_info))
                 mcp_path.write_text(json.dumps(data, indent=2) + "\n")
         return True
 
@@ -102,8 +106,16 @@ class CursorConnector(AgentConnector):
             "args": args,
             "env": {"AGENTNET_TOKEN": "${env:AGENTNET_TOKEN}"},
         }
+        owned = merge_mapping(
+            data["mcpServers"],
+            previously_owned=prior_owned(AgentName.CURSOR.value),
+        )
         mcp_path.write_text(json.dumps(data, indent=2) + "\n")
-        return {"scope": "global", "file": str(mcp_path), "server_name": "agentnet"}
+        return stamp(
+            {"scope": "global", "file": str(mcp_path), "server_name": "agentnet"},
+            owned=owned,
+            file=str(mcp_path),
+        )
 
     def _write_permissions(self, root: Path) -> Path:
         perms_path = root / "permissions.json"

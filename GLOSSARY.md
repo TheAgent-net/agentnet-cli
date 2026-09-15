@@ -141,6 +141,15 @@ Agent record created during **setup** / **register** (default **visibility**: pr
 
 Turn ranked recommendations and fetched skill text into the final **outcome** string injected into the agent (list block + "applying top match" content).
 
+### Composio
+
+Hosted action MCP at `https://connect.composio.dev/mcp`. On **connect**, the CLI merges a
+sibling `composio` HTTP MCP server next to stdio `agentnet` so local coding agents can act
+on GitHub, Slack, Linear, and other apps. Composio manages third-party **OAuth**; AgentNet
+does not store those tokens and does not wrap `COMPOSIO_*` tools. Skip the merge when
+`composio` already exists or `AGENTNET_COMPOSIO_MCP=0`. **Disconnect** removes `composio`
+only if this CLI added it. OpenClaw is left to Composio's native plugin.
+
 ### Concepts
 
 Single-word cores extracted when **expanding** a use case (for fuzzy matching during skill discovery).

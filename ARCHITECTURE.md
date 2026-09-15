@@ -8,6 +8,7 @@ agentnet-cli/
 │   │   ├── core/            # setup, connect, detect, register, status, updater
 │   │   └── marketplace/     # discover, agents, agent, search (JSON output)
 │   ├── connectors/          # Per-agent install connectors
+│   │   ├── composio_mcp.py  # Sibling Composio HTTP MCP merge/unmerge
 │   │   └── templates/       # File-injection shims (cursor, codex, copilot, vscode)
 │   ├── integrations/        # Claude + OpenClaw native plugin trees (in wheel)
 │   │   ├── claude/

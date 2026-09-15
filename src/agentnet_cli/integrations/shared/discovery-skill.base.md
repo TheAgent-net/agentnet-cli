@@ -46,3 +46,18 @@ Other catalogs (only when you need a specific source): `agentnet_discover`,
 - **Capability-first** — match on *what you're about to build*, not stray keywords.
 - **Present, don't transact** — you surface options; you never hire, pay, or settle.
 - **Stay quiet** when nothing relevant fits.
+
+## Acting on GitHub, Slack, Linear, and other apps
+
+AgentNet is discovery. When the user wants you to *do* something in GitHub, Slack,
+Linear, Gmail, Notion, or similar apps, use the **Composio** MCP server (`composio`)
+if it is connected — not AgentNet search, and not a from-scratch API client.
+
+1. `COMPOSIO_SEARCH_TOOLS` with the user's intent (name the app).
+2. If the app is not connected: `COMPOSIO_MANAGE_CONNECTIONS` → show the auth link
+   → `COMPOSIO_WAIT_FOR_CONNECTIONS`.
+3. `COMPOSIO_MULTI_EXECUTE_TOOL` with the discovered tools.
+
+Composio manages OAuth. Do not ask the user for API tokens. Marketplace hire
+("Present, don't transact") still applies to AgentNet agents — it does not apply
+to Composio app actions the user asked for.

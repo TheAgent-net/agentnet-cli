@@ -14,9 +14,13 @@ class AgentConnector(ABC):
 **detect()** — Check if the agent is installed by looking for its config directory and validation files.
 
 **connect()** — Inject three layers:
-1. MCP server config (so the agent can call Agent-net tools)
+1. MCP server config (so the agent can call Agent-net tools), plus a sibling
+   `composio` HTTP MCP (`https://connect.composio.dev/mcp`) for GitHub/Slack/Linear
+   actions. The `agentnet` stdio entry is never replaced. Skip `composio` if it
+   already exists; disconnect removes it only when this CLI added it.
 2. Context/skill files (so the LLM knows how to use the tools)
-3. Permission rules (so tool calls don't require manual approval)
+3. Permission rules (so AgentNet tool calls don't require manual approval).
+   Composio tools are *not* auto-approved.
 
 **disconnect()** — Remove everything `connect()` wrote, using the manifest to know exactly what to clean up.
 
@@ -51,5 +55,7 @@ When writing MCP configs, connectors merge into existing files (never overwrite)
 - **JSON**: Read, deep-merge the `mcpServers.agentnet` key, write back
 - **TOML**: Append `[mcp_servers.agentnet]` section if not present
 - **YAML**: Read, merge under `mcp.servers.agentnet`, write back
+- **Composio**: Merge sibling `composio` `{url: https://connect.composio.dev/mcp}`
+  unless that key already exists (`connectors/composio_mcp.py`)
 
 Original files are backed up to `~/.agentnet/backups/<agent>/` before modification.

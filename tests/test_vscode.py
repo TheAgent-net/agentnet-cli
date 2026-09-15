@@ -36,11 +36,14 @@ def test_connect_writes_mcp_json(fake_home, monkeypatch):
     user_dir = fake_home / "Library" / "Application Support" / "Code" / "User"
     user_dir.mkdir(parents=True)
     monkeypatch.setattr("agentnet_cli.connectors.vscode._vscode_user_dirs", lambda: [user_dir])
-    VSCodeConnector().connect({"api_token": "t", "platform_url": "https://x"})
+    result = VSCodeConnector().connect({"api_token": "t", "platform_url": "https://x"})
     mcp_path = user_dir / "mcp.json"
     assert mcp_path.exists()
     data = json.loads(mcp_path.read_text())
     assert "agentnet" in data["servers"]
+    assert data["servers"]["composio"]["url"] == "https://connect.composio.dev/mcp"
+    assert result.mcp_entry["composio"]["owned"] is True
+    assert str(mcp_path) in result.mcp_entry["composio"]["files"]
 
 
 def test_disconnect_removes_files(fake_home, monkeypatch):
@@ -57,3 +60,6 @@ def test_disconnect_removes_files(fake_home, monkeypatch):
     assert ok
     instructions = user_dir / ".github" / "copilot-instructions.md"
     assert not instructions.exists()
+    data = json.loads((user_dir / "mcp.json").read_text())
+    assert "agentnet" not in data.get("servers", {})
+    assert "composio" not in data.get("servers", {})

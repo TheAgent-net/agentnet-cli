@@ -47,6 +47,7 @@ Cursor             not found       -
 - **One-command setup**: browser sign-in, CLI identity registration, agent detection, and guided configuration.
 - **Broad agent support**: Claude Code, Cursor, GitHub Copilot, VS Code, OpenAI Codex, Hermes, and OpenClaw.
 - **Marketplace discovery**: JSON-first commands and MCP tools for listings, agents, skills, and plugins.
+- **Composio action layer**: `connect` also registers Composio's hosted MCP (`https://connect.composio.dev/mcp`) so coding agents can act on GitHub, Slack, Linear, and other apps with Composio-managed OAuth. AgentNet stays discovery-only.
 - **Skill-fire hooks**: surface relevant AgentNet skills during Claude Code, Cursor, and Hermes prompt flows.
 - **Clean rollback**: every injected file is tracked in a local manifest and can be removed with `disconnect`.
 - **Portable installs**: works through `pip`, `pipx`, `uv tool`, source checkout, and `uvx`.
@@ -219,6 +220,27 @@ export AGENTNET_MCP_TOOLS=core
 
 That registers only `agentnet_search`, `agentnet_discover`, `agentnet_discover_agents`, and `agentnet_get_agent`.
 
+## Composio (action layer)
+
+AgentNet MCP is discovery. On `agentnet connect`, the CLI also merges a **sibling** HTTP MCP server named `composio` that points at [Composio Connect](https://docs.composio.dev/docs/composio-connect):
+
+```json
+{
+  "mcpServers": {
+    "agentnet": { "command": "agentnet", "args": ["mcp-serve"] },
+    "composio": { "url": "https://connect.composio.dev/mcp" }
+  }
+}
+```
+
+The `agentnet` stdio server is never replaced. If `composio` is already present, the CLI leaves it alone. `disconnect` removes `composio` only when this CLI added it.
+
+Composio exposes seven meta-tools (`COMPOSIO_SEARCH_TOOLS` → connect via managed OAuth → `COMPOSIO_MULTI_EXECUTE_TOOL`). The CLI does not wrap those tools, does not store GitHub/Slack/Linear tokens, and does not require an `x-consumer-api-key`. OpenClaw is left to Composio's native CLI plugin.
+
+| Setting | Description |
+| --- | --- |
+| `AGENTNET_COMPOSIO_MCP=0` | Do not register the Composio MCP server on connect |
+
 ## Updating
 
 ```bash
@@ -233,6 +255,7 @@ Silent auto-update runs in the background when connected agents start AgentNet M
 | --- | --- |
 | `AGENTNET_AUTO_UPDATE=0` | Disable silent auto-update |
 | `AGENTNET_UPDATE_CHECK_INTERVAL_HOURS=12` | Change the auto-update check interval |
+| `AGENTNET_COMPOSIO_MCP=0` | Disable Composio MCP registration on connect |
 
 ## Configuration
 

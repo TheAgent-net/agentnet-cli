@@ -8,7 +8,7 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
-- **Testing:** pytest (511 tests), pytest-cov
+- **Testing:** pytest (541 tests), pytest-cov
 - **CI:** GitHub Actions (lint + test matrix on 3.10/3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 
@@ -17,7 +17,7 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 See [ARCHITECTURE.md](ARCHITECTURE.md). Layers:
 
 - `cli/` — Typer entry (`cli/main.py`), core commands, marketplace JSON commands
-- `connectors/` — per-agent wiring + `templates/` for file injection
+- `connectors/` — per-agent wiring + `templates/` for file injection + `composio_mcp.py`
 - `marketplace/` — platform client, external catalogs, skill discovery
 - `tools/` — MCP stdio server, Hermes plugin, and `skillfire/` (the every-prompt skill-fire pipeline)
 - `infra/` — config, paths, manifest
@@ -39,6 +39,7 @@ uv run agentnet --help           # Run locally
 - **Manifest rollback:** `manifest.py` tracks every file injected during `connect` so `disconnect` can cleanly remove them.
 - **Config persistence:** `~/.agentnet/config.json` stores platform credentials (0600 permissions). Agent custom paths stored separately.
 - **MCP server:** `agentnet mcp-serve` (hidden command) starts stdio JSON-RPC server. Agents launch this as a subprocess.
+- **Composio action layer:** `connectors/composio_mcp.py` merges a sibling HTTP MCP server named `composio` (`https://connect.composio.dev/mcp`) on connect for Cursor, Copilot, VS Code, Codex, Claude (`~/.claude.json` via `claude_mcp_json()`, independent of the Windows `%APPDATA%/Claude` config root), and Hermes. The `agentnet` stdio entry is never replaced. Skip if `composio` already exists; reconnect keeps ownership when the URL is still ours. Disconnect removes it only when this CLI added it **and** the entry still matches our URL. Disable with `AGENTNET_COMPOSIO_MCP=0`. Do not wrap `COMPOSIO_*` tools in `agentnet mcp-serve`. OpenClaw is left to Composio's native plugin.
 - **Marketplace commands:** All output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
 - **Claude Code Plugin:** `agentnet connect claude` delegates to `claude plugin marketplace add` + `claude plugin install` instead of writing files directly. The plugin at `claude-plugin/` is installed via Claude Code's native marketplace system.
 - **Hermes Plugin:** `agentnet connect hermes` copies the plugin to `~/.hermes/plugins/agentnet/` and skills to `~/.hermes/skills/agentnet/`, using Hermes's native plugin system.

@@ -180,6 +180,34 @@ def test_connect_not_registered(fake_home):
     assert result.exit_code != 0 or "not registered" in result.stdout.lower()
 
 
+def test_connect_prints_nonfatal_errors(fake_home):
+    """Successful connect still surfaces Composio/plugin errors instead of hiding them."""
+    from agentnet_cli.connectors.base import ConnectionResult
+    from agentnet_cli.infra.config import save_config
+
+    save_config({"api_token": "tok", "org_id": "o", "agent_id": "a"})
+    (fake_home / ".claude").mkdir()
+    (fake_home / ".claude" / "settings.json").write_text("{}")
+
+    fake_connector = patch(
+        "agentnet_cli.cli.core.connect.get_connector",
+    )
+    with fake_connector as mock_get:
+        connector = mock_get.return_value
+        connector.detect.return_value = DetectionResult(
+            agent_name="claude", detected=True,
+        )
+        connector.connect.return_value = ConnectionResult(
+            success=True,
+            mcp_entry={"scope": "settings-hook", "composio": {"owned": False}},
+            errors=["composio MCP registration skipped: read-only"],
+        )
+        result = runner.invoke(app, ["connect", "claude"])
+    assert result.exit_code == 0
+    assert "connected" in result.stdout.lower()
+    assert "composio MCP registration skipped: read-only" in result.stdout
+
+
 def test_dev_flag_sets_development_env(fake_home):
     with patch("agentnet_cli.cli.core.updater.maybe_auto_update"):
         runner.invoke(app, ["--dev", "detect"])

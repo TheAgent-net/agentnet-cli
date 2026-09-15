@@ -20,3 +20,6 @@ When the user *does* explicitly ask:
 3. **Present, don't transact** — surface options only; never install, hire, pay, or settle.
 
 Stay quiet when nothing relevant fits.
+
+When the user wants to act in GitHub, Slack, Linear, or similar apps, that is Composio
+(`COMPOSIO_SEARCH_TOOLS`), not an AgentNet marketplace search.
