@@ -9,6 +9,7 @@ from typing import Any
 
 from ..infra.paths import AgentName, agent_config_root, agentnet_home
 from .base import AgentConnector, ConnectionResult, DetectionResult
+from .composio_mcp import merge_mapping, stamp, unmerge_mapping
 from .shims import load_shim
 
 
@@ -54,6 +55,7 @@ class VSCodeConnector(AgentConnector):
         mcp_config = self._build_mcp_entry()
 
         vscode_files: list[str] = []
+        composio_files: list[str] = []
         for user_dir in _vscode_user_dirs():
             mcp_path = user_dir / "mcp.json"
             backup = agentnet_home() / "backups" / "vscode" / mcp_path.parent.parent.name / "mcp.json.bak"
@@ -61,10 +63,12 @@ class VSCodeConnector(AgentConnector):
             if mcp_path.exists():
                 backup.write_bytes(mcp_path.read_bytes())
                 files_modified.append((mcp_path, backup))
-            self._merge_mcp(mcp_path, mcp_config)
+            if self._merge_mcp(mcp_path, mcp_config):
+                composio_files.append(str(mcp_path))
             vscode_files.append(str(mcp_path))
 
         mcp_entry_info["vscode_files"] = vscode_files
+        stamp(mcp_entry_info, owned=bool(composio_files), files=composio_files)
 
         user_dirs = _vscode_user_dirs()
         instructions_dir = user_dirs[0] if user_dirs else agent_config_root(AgentName.VSCODE)
@@ -87,11 +91,15 @@ class VSCodeConnector(AgentConnector):
                 p.unlink()
 
         mcp_info = connection_manifest.get("mcp_registered", {})
+        composio_files = set((mcp_info.get("composio") or {}).get("files") or [])
         for vsc_path_str in mcp_info.get("vscode_files", []):
             vsc_path = Path(vsc_path_str)
             if vsc_path.exists():
                 data = json.loads(vsc_path.read_text())
-                data.get("servers", {}).pop("agentnet", None)
+                servers = data.get("servers", {})
+                if isinstance(servers, dict):
+                    servers.pop("agentnet", None)
+                    unmerge_mapping(servers, owned=vsc_path_str in composio_files)
                 vsc_path.write_text(json.dumps(data, indent=2) + "\n")
         return True
 
@@ -109,11 +117,13 @@ class VSCodeConnector(AgentConnector):
             "args": ["agentnet-cli", "mcp-serve"],
         }
 
-    def _merge_mcp(self, mcp_path: Path, entry: dict[str, Any]) -> None:
+    def _merge_mcp(self, mcp_path: Path, entry: dict[str, Any]) -> bool:
         data: dict[str, Any] = {}
         if mcp_path.exists():
             data = json.loads(mcp_path.read_text())
         data.setdefault("servers", {})
         data["servers"]["agentnet"] = entry
+        owned = merge_mapping(data["servers"])
         mcp_path.parent.mkdir(parents=True, exist_ok=True)
         mcp_path.write_text(json.dumps(data, indent=2) + "\n")
+        return owned

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Register Composio Connect (`https://connect.composio.dev/mcp`) as a sibling HTTP MCP
+  server on `agentnet connect` so coding agents can act on GitHub, Slack, Linear, and
+  other apps. AgentNet MCP stays discovery-only. Skip the merge if `composio` already
+  exists; disconnect removes it only when this CLI added it. Disable with
+  `AGENTNET_COMPOSIO_MCP=0`. OpenClaw is left to Composio's native plugin.
+
 ## 0.4.0 - 2026-07-23
 
 - Add every-prompt skill-fire support for Cursor and Hermes.

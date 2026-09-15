@@ -137,6 +137,7 @@ def test_connect_cleans_legacy_mcp(fake_home):
     data = json.loads(claude_json.read_text())
     assert "agentnet" not in data["mcpServers"]
     assert "other" in data["mcpServers"]
+    assert data["mcpServers"]["composio"]["url"] == "https://connect.composio.dev/mcp"
 
 
 def test_connect_cleans_legacy_permissions(fake_home):
@@ -156,6 +157,30 @@ def test_connect_cleans_legacy_permissions(fake_home):
 
 
 # --- disconnect ---
+
+
+def test_connect_registers_composio_mcp(fake_home):
+    _setup_claude(fake_home)
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        result = ClaudeConnector().connect({"api_token": "t"})
+    assert result.success
+    claude_json = fake_home / ".claude.json"
+    data = json.loads(claude_json.read_text())
+    assert data["mcpServers"]["composio"]["url"] == "https://connect.composio.dev/mcp"
+    assert "agentnet" not in data["mcpServers"]
+    assert result.mcp_entry["composio"]["owned"] is True
+
+
+def test_disconnect_removes_owned_composio(fake_home):
+    _setup_claude(fake_home)
+    with patch("shutil.which", return_value="/usr/bin/claude"), \
+         patch("subprocess.run", side_effect=_mock_run_ok):
+        result = ClaudeConnector().connect({"api_token": "t"})
+        ok = ClaudeConnector().disconnect({"mcp_registered": result.mcp_entry})
+    assert ok
+    data = json.loads((fake_home / ".claude.json").read_text())
+    assert "composio" not in data.get("mcpServers", {})
 
 
 def test_disconnect_calls_plugin_uninstall(fake_home):

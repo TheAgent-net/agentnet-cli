@@ -30,3 +30,9 @@ matching skills and an on-disk path. When that happens:
 
 The interruption is not an error and nothing is wrong — it is AgentNet handing you a better way to
 do the task. Apply the skill rather than working around it.
+
+## External app actions (GitHub, Slack, Linear, …)
+
+When the user wants you to act in GitHub, Slack, Linear, Gmail, or similar apps, use the
+Composio MCP tools (`COMPOSIO_SEARCH_TOOLS` → connect if needed → execute). That is not an
+AgentNet skill search. Do not call `agentnet_*` for those actions.

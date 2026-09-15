@@ -13,6 +13,7 @@ import tomli_w
 
 from ..infra.paths import AgentName, agent_config_root
 from .base import AgentConnector, ConnectionResult, DetectionResult
+from .composio_mcp import composio_owned, merge_mapping, stamp, unmerge_mapping
 from .shims import load_shim
 
 
@@ -56,6 +57,7 @@ class CodexConnector(AgentConnector):
                 "args": ["mcp-serve"],
             })
         mcp_servers["agentnet"] = agentnet_entry
+        owned = merge_mapping(mcp_servers)
         toml_path.write_text(tomli_w.dumps(data))
 
         skill_dir = root / "skills" / "agentnet"
@@ -65,7 +67,11 @@ class CodexConnector(AgentConnector):
         files_created.append(skill_path)
         return ConnectionResult(
             success=True, files_created=files_created,
-            mcp_entry={"scope": "user", "file": str(toml_path), "server_name": "agentnet"},
+            mcp_entry=stamp(
+                {"scope": "user", "file": str(toml_path), "server_name": "agentnet"},
+                owned=owned,
+                file=str(toml_path),
+            ),
         )
 
     def disconnect(self, connection_manifest: dict[str, Any]) -> bool:
@@ -79,6 +85,9 @@ class CodexConnector(AgentConnector):
             toml_path = Path(mcp_file)
             if toml_path.exists():
                 data = tomllib.loads(toml_path.read_text())
-                data.get("mcp_servers", {}).pop("agentnet", None)
+                servers = data.get("mcp_servers", {})
+                if isinstance(servers, dict):
+                    servers.pop("agentnet", None)
+                    unmerge_mapping(servers, owned=composio_owned(mcp_info))
                 toml_path.write_text(tomli_w.dumps(data))
         return True

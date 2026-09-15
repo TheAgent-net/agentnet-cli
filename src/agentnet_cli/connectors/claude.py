@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from ..infra.package_paths import bundled_claude_marketplace
 from ..infra.paths import AgentName, agent_config_root
 from .base import AgentConnector, ConnectionResult, DetectionResult
+from .composio_mcp import composio_owned, merge_json_file, stamp, unmerge_json_file
 
 _PLUGIN_ID = "agentnet@agentnet-cli"
 _SUBPROCESS_TIMEOUT = 120
@@ -92,9 +94,16 @@ class ClaudeConnector(AgentConnector):
 
         self._cleanup_legacy()
 
+        claude_json = agent_config_root(AgentName.CLAUDE).parent / ".claude.json"
+        owned = merge_json_file(claude_json, servers_key="mcpServers")
+
         return ConnectionResult(
             success=True,
-            mcp_entry={"scope": "settings-hook", "search_fire": True},
+            mcp_entry=stamp(
+                {"scope": "settings-hook", "search_fire": True, "file": str(claude_json)},
+                owned=owned,
+                file=str(claude_json),
+            ),
             errors=errors,
         )
 
@@ -102,6 +111,15 @@ class ClaudeConnector(AgentConnector):
         from .claude_search_hook import uninstall as uninstall_search_hook
 
         uninstall_search_hook()
+
+        mcp_info = connection_manifest.get("mcp_registered", {})
+        composio_file = (mcp_info.get("composio") or {}).get("file") or mcp_info.get("file")
+        if composio_file:
+            unmerge_json_file(
+                Path(composio_file),
+                servers_key="mcpServers",
+                owned=composio_owned(mcp_info),
+            )
 
         claude_bin = shutil.which("claude")
         if not claude_bin:
