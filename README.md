@@ -330,6 +330,7 @@ Notes:
 - Use Python 3.10 or newer.
 - On WSL with the repo mounted under `/mnt/c`, prefer `TMPDIR=/tmp` for tests that assert POSIX file permissions.
 - Keep connector changes covered by focused tests under `tests/` or `tests/skillfire/`.
+- Cloud Agents install `uv` and the `dev` dependency group from [`.cursor/environment.json`](.cursor/environment.json) during environment builds. No `start` process is required.
 
 ## Release Process
 
