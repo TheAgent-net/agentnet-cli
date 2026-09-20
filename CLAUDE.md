@@ -22,6 +22,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Layers:
 - `tools/` — MCP stdio server, Hermes plugin, and `skillfire/` (the every-prompt skill-fire pipeline)
 - `infra/` — config, paths, manifest
 - `src/agentnet_cli/integrations/` — Claude and OpenClaw native plugin trees (bundled in wheel)
+- `.cursor/environment.json` — Cloud Agent install (`uv` + `dev` group); no start services
 
 ## Key Commands
 

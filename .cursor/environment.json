@@ -1,0 +1,3 @@
+{
+  "install": "curl -LsSf https://astral.sh/uv/install.sh | sh\nexport PATH=\"$HOME/.local/bin:$PATH\"\nuv sync --frozen --group dev"
+}
