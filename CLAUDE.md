@@ -8,7 +8,7 @@ CLI tool that detects AI coding agents on your system and connects them to the [
 - **Package manager:** uv
 - **CLI framework:** Typer + Rich
 - **HTTP client:** httpx
-- **Testing:** pytest (511 tests), pytest-cov
+- **Testing:** pytest (519 tests), pytest-cov
 - **CI:** GitHub Actions (lint + test matrix on 3.10/3.11/3.12/3.13)
 - **Publish:** PyPI via trusted publisher (tag `v*`)
 
@@ -40,6 +40,7 @@ uv run agentnet --help           # Run locally
 - **Config persistence:** `~/.agentnet/config.json` stores platform credentials (0600 permissions). Agent custom paths stored separately.
 - **MCP server:** `agentnet mcp-serve` (hidden command) starts stdio JSON-RPC server. Agents launch this as a subprocess.
 - **Marketplace commands:** All output JSON to stdout. Errors output `{"error": "..."}` with exit code 1.
+- **Muse:** `agentnet muse` (`cli/marketplace/muse.py`) prints the hosted AgentNet Concierge MCP settings (`<platform>/muse/mcp`, bearer auth, key masked unless `--show-key`). Muse runs connectors on Meta's cloud VMs, so there is no local connector to install — the server lives in agentnet-platform (`src/apps/platform/muse/`).
 - **Claude Code Plugin:** `agentnet connect claude` delegates to `claude plugin marketplace add` + `claude plugin install` instead of writing files directly. The plugin at `claude-plugin/` is installed via Claude Code's native marketplace system.
 - **Hermes Plugin:** `agentnet connect hermes` copies the plugin to `~/.hermes/plugins/agentnet/` and skills to `~/.hermes/skills/agentnet/`, using Hermes's native plugin system.
 - **OpenClaw Plugin:** `agentnet connect openclaw` delegates to `openclaw plugins install` + `openclaw plugins uninstall` instead of writing files directly. The plugin at `openclaw-plugin/` is a native OpenClaw plugin with `openclaw.plugin.json` manifest, publishable to ClawHub.

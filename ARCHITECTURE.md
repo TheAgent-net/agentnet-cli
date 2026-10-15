@@ -6,7 +6,7 @@ agentnet-cli/
 │   ├── cli/                 # Typer entry point and commands
 │   │   ├── main.py          # `agentnet` console script
 │   │   ├── core/            # setup, connect, detect, register, status, updater
-│   │   └── marketplace/     # discover, agents, agent, search (JSON output)
+│   │   └── marketplace/     # discover, agents, agent, search, muse (JSON output)
 │   ├── connectors/          # Per-agent install connectors
 │   │   └── templates/       # File-injection shims (cursor, codex, copilot, vscode)
 │   ├── integrations/        # Claude + OpenClaw native plugin trees (in wheel)

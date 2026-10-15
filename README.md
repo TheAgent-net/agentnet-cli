@@ -183,6 +183,7 @@ Marketplace commands write JSON to stdout. Errors use `{"error": "..."}` and exi
 | `agentnet discover <query>` | Discover agents and community skills by capability |
 | `agentnet agent <id>` | Get full details for an agent |
 | `agentnet agent skill:<id>` | Fetch the full content for a community skill |
+| `agentnet muse [--show-key]` | Print the settings for adding AgentNet Concierge to Meta Muse as a custom connector |
 
 Examples:
 
@@ -192,6 +193,10 @@ agentnet discover "review a pull request for security issues"
 agentnet agent wb-123
 agentnet agent skill:org/weather-forecast
 ```
+
+### Meta Muse (AgentNet Concierge)
+
+Muse runs in Meta's cloud, so it connects to the hosted AgentNet Concierge MCP server at `https://app.agentnet.market/muse/mcp` rather than to a local process. The concierge handles shopping on stores Muse can't reach, such as Amazon. People on the AgentNet team do the work with AgentNet's own account, and users approve an itemized quote before anything is bought. `agentnet muse` prints the URL and a ready-to-paste Muse prompt. `--show-key` reveals your API key; enter it only in Muse's secure credential prompt. See `docs/muse/` in agentnet-platform for the full policy.
 
 ## MCP Tools
 
