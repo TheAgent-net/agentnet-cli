@@ -424,6 +424,8 @@ def enable_skill_fire(
 # -- Marketplace commands --
 from .marketplace.agent import agent as _agent_fn  # noqa: E402
 from .marketplace.discover import discover as _discover_fn  # noqa: E402
+from .marketplace.muse import muse as _muse_fn  # noqa: E402
 
 app.command(name="discover")(_discover_fn)
 app.command(name="agent")(_agent_fn)
+app.command(name="muse")(_muse_fn)
