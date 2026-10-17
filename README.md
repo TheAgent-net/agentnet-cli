@@ -219,6 +219,8 @@ export AGENTNET_MCP_TOOLS=core
 
 That registers only `agentnet_search`, `agentnet_discover`, `agentnet_discover_agents`, and `agentnet_get_agent`.
 
+For tasks that also need current web sources, see [Web research alongside AgentNet in Codex](docs/parallel-web-research.md) for an optional Parallel Search MCP setup and a marketplace-to-documentation workflow.
+
 ## Updating
 
 ```bash
